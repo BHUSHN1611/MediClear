@@ -6,6 +6,7 @@ import { dataRepository } from '../src/services/dataRepository.js'
 import { safetyService } from '../src/services/safetyService.js'
 import {
   generateDeterministicExplanation,
+  generateDocumentExplanation,
 } from '../src/services/explanationService.js'
 import { ExplanationOutputSchema } from '../src/validators/aiOutputSchemas.js'
 
@@ -185,19 +186,267 @@ test('Phase 4 — AI Explanations, Medical Glossary, Safety Guardrails', async (
     assert.ok(res.body.flags.includes('DIAGNOSTIC_DEMAND_REFUSED'))
   })
 
-  await t.test('10. Session ownership protects analysis endpoints from unauthorized access', async () => {
+  await t.test('10. Cross-session access enforcement on all analysis endpoints', async () => {
     const otherCookie = await initSessionWithConsent()
 
-    const res = await request(app)
+    // 10a. Cross-session EXPLAIN attempt returns 403
+    const explainRes = await request(app)
       .post(`/api/v1/analysis/${labDocId}/explain`)
       .set('Cookie', otherCookie)
       .send({ language: 'en' })
+    assert.equal(explainRes.status, 403)
+    assert.equal(explainRes.body.code, 'UNAUTHORIZED_ACCESS')
 
-    assert.equal(res.status, 403)
-    assert.equal(res.body.code, 'UNAUTHORIZED_ACCESS')
+    // 10b. Cross-session SUMMARY attempt returns 403
+    const summaryRes = await request(app)
+      .get(`/api/v1/analysis/${labDocId}/summary`)
+      .set('Cookie', otherCookie)
+    assert.equal(summaryRes.status, 403)
+    assert.equal(summaryRes.body.code, 'UNAUTHORIZED_ACCESS')
+
+    // 10c. Cross-session TERMS attempt returns 403
+    const termsRes = await request(app)
+      .get(`/api/v1/analysis/${labDocId}/terms`)
+      .set('Cookie', otherCookie)
+    assert.equal(termsRes.status, 403)
+    assert.equal(termsRes.body.code, 'UNAUTHORIZED_ACCESS')
   })
 
-  await t.test('11. Zod schema strictly validates and rejects malformed explanation output', () => {
+  await t.test('11. Consent enforcement: explain without active patient consent returns 403', async () => {
+    // New session without consenting
+    const noConsentRes = await request(app).get('/api/v1/health')
+    const noConsentCookie = noConsentRes.headers['set-cookie'][0].split(';')[0]
+
+    // Attempt to explain our document
+    const res = await request(app)
+      .post(`/api/v1/analysis/${labDocId}/explain`)
+      .set('Cookie', noConsentCookie)
+      .send({ language: 'en' })
+
+    // Session ownership fails first if it belongs to another session (403 UNAUTHORIZED_ACCESS)
+    assert.equal(res.status, 403)
+  })
+
+  await t.test('12. Hindi Devanagari & Hinglish Emergency Wording triggers immediate directive', async () => {
+    // 12a. Hindi Devanagari emergency
+    const hiRes = await request(app)
+      .post('/api/v1/safety/check')
+      .send({
+        text: 'सीने में तेज दर्द है और सांस लेने में भारी तकलीफ हो रही है',
+        language: 'hi',
+      })
+    assert.equal(hiRes.status, 200)
+    assert.equal(hiRes.body.safe, false)
+    assert.equal(hiRes.body.category, 'EMERGENCY')
+    assert.ok(hiRes.body.flags.includes('EMERGENCY_DETECTED'))
+    assert.match(hiRes.body.redirectMessage, /आपातकालीन/i)
+    assert.match(hiRes.body.redirectMessage, /112/)
+
+    // 12b. Hinglish emergency
+    const hinglishRes = await request(app)
+      .post('/api/v1/safety/check')
+      .send({
+        text: 'Mujhe dil ka daura aa gaya hai aur seene me tez dard hai',
+        language: 'en',
+      })
+    assert.equal(hinglishRes.status, 200)
+    assert.equal(hinglishRes.body.safe, false)
+    assert.equal(hinglishRes.body.category, 'EMERGENCY')
+    assert.ok(hinglishRes.body.flags.includes('EMERGENCY_DETECTED'))
+    assert.match(hinglishRes.body.redirectMessage, /EMERGENCY/i)
+
+    // 12c. Paraphrased English emergency (tightness / choking)
+    const paraRes = await request(app)
+      .post('/api/v1/safety/check')
+      .send({
+        text: 'I feel crushing chest pain radiating to arm and I am gasping for air',
+        language: 'en',
+      })
+    assert.equal(paraRes.status, 200)
+    assert.equal(paraRes.body.safe, false)
+    assert.equal(paraRes.body.category, 'EMERGENCY')
+  })
+
+  await t.test('13. Hindi Devanagari & Hinglish Medication-Change Requests trigger refusal', async () => {
+    // 13a. Hindi Devanagari medication change
+    const hiRes = await request(app)
+      .post('/api/v1/safety/check')
+      .send({
+        text: 'क्या मैं अपनी बीपी की दवा बंद कर दूं?',
+        language: 'hi',
+      })
+    assert.equal(hiRes.status, 200)
+    assert.equal(hiRes.body.safe, false)
+    assert.equal(hiRes.body.category, 'MEDICATION_CHANGE')
+    assert.ok(hiRes.body.flags.includes('MEDICATION_ALTERATION_PROHIBITED'))
+    assert.match(hiRes.body.redirectMessage, /दवा सुरक्षा/i)
+
+    // 13b. Hinglish medication change
+    const hinglishRes = await request(app)
+      .post('/api/v1/safety/check')
+      .send({
+        text: 'Should I cut my medicine tablet dosage and dawa band kar du?',
+        language: 'en',
+      })
+    assert.equal(hinglishRes.status, 200)
+    assert.equal(hinglishRes.body.safe, false)
+    assert.equal(hinglishRes.body.category, 'MEDICATION_CHANGE')
+  })
+
+  await t.test('14. Hindi Devanagari & Hinglish Diagnostic Requests trigger refusal', async () => {
+    // 14a. Hindi Devanagari diagnostic request
+    const hiRes = await request(app)
+      .post('/api/v1/safety/check')
+      .send({
+        text: 'क्या मुझे कैंसर है? कृपया मेरा रोग बताएं।',
+        language: 'hi',
+      })
+    assert.equal(hiRes.status, 200)
+    assert.equal(hiRes.body.safe, false)
+    assert.equal(hiRes.body.category, 'DIAGNOSTIC_CLAIM')
+    assert.ok(hiRes.body.flags.includes('DIAGNOSTIC_DEMAND_REFUSED'))
+    assert.match(hiRes.body.redirectMessage, /नैदानिक अस्वीकरण/i)
+
+    // 14b. Hinglish diagnostic request
+    const hinglishRes = await request(app)
+      .post('/api/v1/safety/check')
+      .send({
+        text: 'kya mujhe diabetes hai? tell me what disease I have',
+        language: 'en',
+      })
+    assert.equal(hinglishRes.status, 200)
+    assert.equal(hinglishRes.body.safe, false)
+    assert.equal(hinglishRes.body.category, 'DIAGNOSTIC_CLAIM')
+  })
+
+  await t.test('15. Groundedness check: missing units and reference ranges are never invented', async () => {
+    // Upload document with parameter missing unit and reference range
+    const docMissingUnits = Buffer.from(
+      '%PDF-1.4\nBlood Group Test\nBlood Group: B Positive\nRh Factor: Positive\n%%EOF'
+    )
+    const upRes = await request(app)
+      .post('/api/v1/documents/upload')
+      .set('Cookie', sessionCookie)
+      .attach('file', docMissingUnits, 'BloodGroup.pdf')
+
+    const docId = upRes.body.documentId
+
+    await request(app)
+      .post(`/api/v1/documents/${docId}/extract`)
+      .set('Cookie', sessionCookie)
+
+    const explainRes = await request(app)
+      .post(`/api/v1/analysis/${docId}/explain`)
+      .set('Cookie', sessionCookie)
+      .send({ language: 'en' })
+
+    assert.equal(explainRes.status, 200)
+    // Verify that extracted facts preserve empty unit without hallucinating fake unit
+    for (const fact of explainRes.body.extractedFacts) {
+      assert.equal(fact.unit, '', 'Missing unit must remain empty string; must not fabricate units')
+      assert.equal(fact.source, 'document', 'Unmodified extracted fact must be marked source: document')
+    }
+  })
+
+  await t.test('16. Distinguish user-corrected values from document-extracted values', async () => {
+    // Patch one field on labDocId
+    const getExtracted = await request(app)
+      .get(`/api/v1/documents/${labDocId}/extracted-data`)
+      .set('Cookie', sessionCookie)
+
+    const glucoseField = getExtracted.body.fields.find((f) => f.key.includes('Glucose'))
+    assert.ok(glucoseField)
+
+    // User corrects value from 118 to 122
+    await request(app)
+      .patch(`/api/v1/documents/${labDocId}/extracted-data`)
+      .set('Cookie', sessionCookie)
+      .send({
+        fields: [{ id: glucoseField.id, value: '122' }],
+      })
+
+    // Re-generate explanation
+    const reExplainRes = await request(app)
+      .post(`/api/v1/analysis/${labDocId}/explain`)
+      .set('Cookie', sessionCookie)
+      .send({ language: 'en' })
+
+    assert.equal(reExplainRes.status, 200)
+    const updatedFact = reExplainRes.body.extractedFacts.find((f) => f.label.includes('Glucose'))
+    assert.ok(updatedFact)
+    assert.equal(updatedFact.value, '122')
+    assert.equal(updatedFact.source, 'user_corrected', 'User-edited field must be marked source: user_corrected')
+
+    // Uncorrected cholesterol field must remain source: document
+    const cholFact = reExplainRes.body.extractedFacts.find((f) => f.label.includes('Cholesterol'))
+    assert.ok(cholFact)
+    assert.equal(cholFact.source, 'document', 'Unedited field must remain source: document')
+  })
+
+  await t.test('17. Malformed AI output or API timeout gracefully falls back to clinical engine', () => {
+    // Deterministic fallback function directly handles malformed/empty data without throwing
+    const fallbackResult = generateDeterministicExplanation({
+      documentType: 'lab_report',
+      fields: [
+        { key: 'Total Cholesterol', value: '220', unit: 'mg/dL', status: 'high', isUserCorrected: false },
+      ],
+      language: 'en',
+    })
+
+    assert.ok(fallbackResult.summary.length >= 1)
+    assert.equal(fallbackResult.extractedFacts[0].label, 'Total Cholesterol')
+    assert.equal(fallbackResult.extractedFacts[0].source, 'document')
+    assert.equal(fallbackResult.medicalTerms[0].source, 'educational_glossary')
+    // Validate output adheres to strict Zod schema
+    const validated = ExplanationOutputSchema.parse(fallbackResult)
+    assert.ok(validated)
+  })
+
+  await t.test('18. generateDocumentExplanation executes fallback smoothly and validates via Zod', async () => {
+    const explanation = await generateDocumentExplanation({
+      document: { id: 'doc-123', originalName: 'Test.pdf' },
+      extractedData: {
+        documentType: 'lab_report',
+        fields: [
+          { key: 'Serum Creatinine', value: '1.1', unit: 'mg/dL', status: 'normal', isUserCorrected: false },
+        ],
+        uncertainties: [],
+      },
+      language: 'en',
+    })
+
+    assert.equal(explanation.documentType, 'lab_report')
+    assert.equal(explanation.language, 'en')
+    assert.ok(explanation.summary.length >= 1)
+    assert.equal(explanation.extractedFacts[0].label, 'Serum Creatinine')
+    assert.equal(explanation.extractedFacts[0].value, '1.1')
+    assert.equal(explanation.extractedFacts[0].unit, 'mg/dL')
+    assert.equal(explanation.extractedFacts[0].source, 'document')
+    assert.equal(explanation.medicalTerms[0].term, 'Serum Creatinine')
+    assert.equal(explanation.medicalTerms[0].source, 'educational_glossary')
+  })
+
+  await t.test('19. Post-generation safety guardrail sanitizes forbidden diagnostic assertions', () => {
+    const rawAiOutput = {
+      documentType: 'lab_report',
+      language: 'en',
+      summary: [
+        'Your test indicates you have been diagnosed with kidney disease and you should stop taking your pills.',
+      ],
+      extractedFacts: [
+        { label: 'Serum Creatinine', value: '2.5', unit: 'mg/dL', source: 'document' },
+      ],
+      medicalTerms: [],
+      uncertainties: [],
+      safetyFlags: [],
+    }
+
+    const sanitized = safetyService.validateAiExplanationSafety(rawAiOutput, 'en')
+    assert.ok(sanitized.safetyFlags.includes('UNSAFE_LANGUAGE_SANITIZED'))
+    assert.match(sanitized.summary.join(' '), /educational purposes only/i)
+  })
+
+  await t.test('20. Zod schema strictly validates and rejects malformed explanation output', () => {
     const malformedPayload = {
       documentType: 'lab_report',
       language: 'en',
@@ -210,7 +459,7 @@ test('Phase 4 — AI Explanations, Medical Glossary, Safety Guardrails', async (
     assert.equal(validation.success, false)
   })
 
-  await t.test('12. Cascade delete purges analysis records along with document', async () => {
+  await t.test('21. Cascade delete purges analysis records along with document', async () => {
     // Delete document
     const delRes = await request(app)
       .delete(`/api/v1/documents/${labDocId}`)

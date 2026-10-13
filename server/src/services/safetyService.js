@@ -11,32 +11,43 @@
  */
 
 const EMERGENCY_PATTERNS = [
-  /\b(?:chest\s*pain|heart\s*attack|severe\s*chest\s*pressure)\b/i,
-  /\b(?:difficulty\s*breathing|cannot\s*breathe|shortness\s*of\s*breath|choking)\b/i,
-  /\b(?:sudden\s*numbness|face\s*droop(?:ing)?|slurred\s*speech|stroke\s*symptoms)\b/i,
-  /\b(?:coughing\s*(?:up\s*)?blood|vomiting\s*blood|hemoptysis)\b/i,
-  /\b(?:loss\s*of\s*consciousness|passed\s*out|unresponsive)\b/i,
+  /\b(?:chest\s*pain|heart\s*attack|severe\s*chest\s*pressure|chest\s*tightness|crushing\s*chest\s*pain|pain\s*radiating\s*to\s*(?:arm|jaw))\b/i,
+  /\b(?:difficulty\s*breathing|cannot\s*breathe|shortness\s*of\s*breath|short\s*of\s*breath|choking|gasping\s*for\s*air|trouble\s*breathing|struggling\s*to\s*breathe)\b/i,
+  /\b(?:sudden\s*numbness|face\s*droop(?:ing)?|slurred\s*speech|stroke\s*symptoms|cannot\s*move\s*(?:arm|leg|face))\b/i,
+  /\b(?:coughing\s*(?:up\s*)?blood|vomiting\s*blood|hemoptysis|severe\s*uncontrolled\s*bleeding)\b/i,
+  /\b(?:loss\s*of\s*consciousness|passed\s*out|unresponsive|fainted|blacked\s*out|collapsed)\b/i,
   /\b(?:severe\s*allergic\s*reaction|anaphylaxis|throat\s*swelling)\b/i,
-  /\b(?:suicide|suicidal|end\s*my\s*life|overdose)\b/i,
-  // Hindi Emergency Keywords
-  /(?:सीने\s*में\s*(?:तेज\s*)?दर्द|दिल\s*का\s*दौरा|सांस\s*(?:लेने\s*में\s*)?तकलीफ|खून\s*की\s*उल्टी|बेहोश|लकवा)/,
+  /\b(?:suicide|suicidal|end\s*my\s*life|overdose|swallowed\s*poison|took\s*too\s*many\s*pills)\b/i,
+  // Hindi Emergency Keywords (Devanagari)
+  /(?:सीने\s*में\s*(?:तेज\s*)?(?:दर्द|भारीपन|जकड़न)|दिल\s*का\s*दौरा|हार्ट\s*अटैक|सांस\s*(?:लेने\s*में\s*)?(?:तकलीफ|कठिनाई|दिक्कत)|सांस\s*फूल|खून\s*की\s*उल्टी|बेहोश|बेहोशी|लकवा|आत्महत्या)/,
+  // Hinglish / Romanized Hindi Emergency Keywords
+  /\b(?:seene\s*me(?:in)?\s*(?:tez\s*)?dard|chhati\s*me(?:in)?\s*dard|dil\s*ka\s*daura|heart\s*attack\s*aa\s*gaya)\b/i,
+  /\b(?:saans\s*(?:lene\s*me(?:in)?\s*)?(?:dikkat|takleef|problem)|saans\s*phool\s*rahi|khoon\s*ki\s*ulti|behosh\s*ho\s*gaya)\b/i,
 ]
 
 const MEDICATION_CHANGE_PATTERNS = [
-  /\b(?:should\s*i|can\s*i|could\s*i)\s*(?:stop|quit|discontinue|start|change|increase|decrease|double|reduce|skip|alter|replace)\b.*?\b(?:medication|medicine|pill|dose|dosage|drug|tablet|statin|steroid|antibiotic|insulin)\b/i,
-  /\b(?:stop|quit|discontinue|start|change|increase|decrease|double|reduce|skip|alter|replace)\s+(?:taking\s+)?(?:my\s+|the\s+)?(?:\w+\s+)?(?:medication|medicine|pill|dose|dosage|drug|tablet|statin|steroid|antibiotic|insulin)\b/i,
+  /\b(?:should\s*i|can\s*i|could\s*i)\s*(?:stop|quit|discontinue|start|change|increase|decrease|double|reduce|skip|alter|replace|halve|cut)\b.*?\b(?:medication|medicine|pill|dose|dosage|drug|tablet|statin|steroid|antibiotic|insulin|capsule|injection)\b/i,
+  /\b(?:stop|quit|discontinue|start|change|increase|decrease|double|reduce|skip|alter|replace|halve|cut)\s+(?:taking\s+)?(?:my\s+|the\s+)?(?:\w+\s+)?(?:medication|medicine|pill|dose|dosage|drug|tablet|statin|steroid|antibiotic|insulin|capsule|injection)\b/i,
   /\b(?:prescribe\s*(?:me)?\s*(?:a|some)?\s*(?:medicine|pill|drug|antibiotic))\b/i,
-  // Hindi Medication Change Keywords
-  /(?:दवा\s*(?:बंद\s*कर|रोक|बदल|शुरू)\s*कर|खुराक\s*(?:बढ़ा|घटा)|दवाई\s*लिख\s*दो)/,
+  // Hindi Medication Change Keywords (Devanagari)
+  /(?:दवा(?:ई)?\s*(?:बंद|रोक|बदल|शुरू|कम|ज्यादा|आधी)(?:\s*(?:कर|दूं|दे|लूं|लो))?|खुराक\s*(?:बढ़ा|घटा|आधी)|दवाई\s*(?:लिख\s*दो|छोड़|लेना\s*बंद)|गोली\s*(?:बंद|रोक))/,
+  // Hinglish Medication Change Keywords
+  /\b(?:dawa|dawae|medicine|goli)\s*(?:band\s*kar|rok\s*du|badal\s*du|shuru\s*kar|kam\s*kar|zyada\s*kar)\b/i,
+  /\b(?:khurak|dosage?)\s*(?:badha|ghata|kam\s*kar|aadhi\s*kar)\b/i,
 ]
 
 const DIAGNOSTIC_DEMAND_PATTERNS = [
-  /\b(?:do\s*i\s*have\s*(?:cancer|diabetes|heart\s*disease|stroke|kidney\s*failure|covid))\b/i,
-  /\b(?:diagnose\s*(?:me|my\s*condition|this\s*disease))\b/i,
-  /\b(?:what\s*disease\s*do\s*i\s*have)\b/i,
-  /\b(?:tell\s*me\s*if\s*i\s*am\s*(?:sick|dying|terminal))\b/i,
-  // Hindi Diagnostic Keywords
-  /(?:क्या\s*मुझे\s*(?:कैंसर|डायबिटीज|बीमारी)\s*है|मेरा\s*रोग\s*पहचान|निदान\s*करें)/,
+  /\b(?:do\s*i\s*have|could\s*i\s*have|might\s*i\s*have)\s*(?:cancer|diabetes|heart\s*disease|stroke|kidney\s*failure|covid|hypertension|tb|pneumonia)\b/i,
+  /\b(?:diagnose\s*(?:me|my\s*condition|this\s*disease|my\s*symptoms|what\s*i\s*have))\b/i,
+  /\b(?:what\s*(?:disease|illness|condition|infection)\s*do\s*i\s*have)\b/i,
+  /\b(?:tell\s*me\s*if\s*i\s*am\s*(?:sick|dying|terminal|ill))\b/i,
+  /\b(?:is\s*this\s*(?:cancer|a\s*heart\s*attack|a\s*stroke))\b/i,
+  // Hindi Diagnostic Keywords (Devanagari)
+  /(?:क्या\s*मुझे\s*(?:कैंसर|डायबिटीज|बीमारी|रोग)\s*है|मेरा\s*(?:रोग|निदान)\s*(?:पहचान|बता|करें)|क्या\s*यह\s*(?:कैंसर|गंभीर\s*बीमारी)\s*है)/,
+  // Hinglish Diagnostic Keywords
+  /\b(?:kya\s*mujhe\s*(?:cancer|diabetes|bimari|rog)\s*hai)\b/i,
+  /\b(?:kya\s*ye\s*(?:cancer|serious)\s*hai)\b/i,
+  /\b(?:meri\s*bimari\s*(?:batao|pehchano|diagnose\s*karo))\b/i,
 ]
 
 const PROMPT_INJECTION_PATTERNS = [

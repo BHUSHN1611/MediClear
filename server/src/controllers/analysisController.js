@@ -30,6 +30,15 @@ export async function generateExplanation(req, res, next) {
       })
     }
 
+    // Consent Verification
+    const consent = await dataRepository.findConsentBySession(req.sessionId)
+    if (!consent) {
+      return res.status(403).json({
+        error: 'Active patient consent is required to generate explanations.',
+        code: 'CONSENT_REQUIRED',
+      })
+    }
+
     // Parse request body
     const parseResult = ExplanationRequestSchema.safeParse(req.body)
     if (!parseResult.success) {

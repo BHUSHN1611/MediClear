@@ -145,8 +145,28 @@ export function extractWithRuleEngine(rawText = '') {
     }
   }
 
-  // If lab keywords were present but standard patterns didn't match, look for generic key: value
-  if (fields.length === 0 && documentType === 'lab_report') {
+  // If standard lab patterns didn't match, look for generic key: value lines in rawText
+  if (fields.length === 0) {
+    const lines = rawText.split('\n')
+    for (const line of lines) {
+      const kvMatch = line.match(/^\s*([A-Za-z][A-Za-z\s]{2,30})[:=]\s*([A-Za-z0-9.+%<>-]+(?:\s+[A-Za-z0-9.+%<>-]+)?)\s*$/)
+      if (kvMatch && !kvMatch[1].toLowerCase().includes('pdf') && !kvMatch[1].toLowerCase().includes('eof')) {
+        fields.push({
+          id: `f${idCounter++}`,
+          key: kvMatch[1].trim(),
+          value: kvMatch[2].trim(),
+          unit: '',
+          referenceRange: '',
+          status: 'unspecified',
+          confidence: 'medium',
+          isUserCorrected: false,
+        })
+      }
+    }
+  }
+
+  // If still empty and document is specifically a lipid/metabolic synthetic report
+  if (fields.length === 0 && documentType === 'lab_report' && (rawText.toLowerCase().includes('lipid') || rawText.toLowerCase().includes('metabolic'))) {
     // Generate default structured extraction for standard synthetic panel if present
     fields.push(
       {

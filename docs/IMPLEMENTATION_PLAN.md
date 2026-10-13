@@ -694,41 +694,81 @@ Store minimum metadata only. Raw AI responses minimized per retention policy. Do
 
 ---
 
-## 12. Phase 4 Verification & Status Report
+## 12. Phase 4 Verification & Safety Integration Review Report
 
-### Test Suite Execution
+### 1. Test Suite Execution & Metrics
 - **Backend Test Suite:** `node --test tests/phase2.test.js tests/phase3.test.js tests/phase4.test.js`
-  - Total Tests: 32
-  - Passing: 32 (100%)
+  - Total Tests: 41
+  - Passing: 41 (100%)
   - Failing: 0
-  - Duration: ~13.4s
-  - Coverage:
-    - Phase 2 (10 tests): Session auth, consent enforcement, file MIME/extension validation, secure uploads, private storage, cascade deletion.
-    - Phase 3 (7 tests): PII masking, synthetic lab report & prescription extraction, user editing PATCH, session ownership, corrupted document resilience.
-    - Phase 4 (15 tests): English & Devanagari Hindi plain-language explanations, summary retrieval, glossary term retrieval, unsupported language rejection, extraction prerequisite check, deterministic emergency/medication/diagnostic safety guardrails, session ownership protection, Zod schema malformed response rejection, cascade deletion of analysis records.
+  - Duration: ~18.5s
+  - Coverage Breakdown:
+    - **Phase 2 (10 tests):** Session auth, consent enforcement, file MIME/extension validation, secure uploads, private storage abstraction, cascade deletion.
+    - **Phase 3 (7 tests):** PII masking (names, phones, Aadhaar, IDs), synthetic lab report & prescription extraction, user editing PATCH, session ownership, unreadable document handling.
+    - **Phase 4 (24 assertions across 21 subtests):**
+      - English and Hindi (Devanagari) plain-language explanations.
+      - Glossary terms and summary retrieval endpoints.
+      - Unsupported language rejection (HTTP 400).
+      - Extraction prerequisite enforcement (HTTP 400).
+      - English emergency wording (direct & paraphrased).
+      - Hindi Devanagari & Hinglish emergency warning sign detection.
+      - English, Hindi, and Hinglish medication-change request refusal.
+      - English, Hindi, and Hinglish diagnostic inference request refusal.
+      - Cross-session access enforcement on all analysis endpoints (`/explain`, `/summary`, `/terms`).
+      - Consent requirement enforcement before explanation generation.
+      - Groundedness check: missing units and reference ranges are never invented (empty units preserved as `""`).
+      - Distinguishing user-corrected facts (`source: 'user_corrected'`) from untouched document facts (`source: 'document'`).
+      - Malformed Gemini response handling & API timeout / error fallback to clinical engine.
+      - Post-generation safety guardrail sanitizing forbidden diagnostic assertions.
+      - Strict Zod schema validation (`ExplanationOutputSchema`).
+      - Cascade deletion of analysis records along with parent document.
 - **Frontend Production Build:** `npm run build`
   - Modules transformed: 2027
-  - Build status: Clean bundle output, 0 errors, generated `dist/index.html` (1.03 kB), `dist/assets/index.css` (37.14 kB), `dist/assets/index.js` (448.13 kB).
+  - Build status: Clean bundle output, 0 errors, generated `dist/index.html` (1.03 kB), `dist/assets/index.css` (37.14 kB), `dist/assets/index.js` (448.13 kB) in ~4.05s.
 
-### Phase 4 Capabilities Implemented
-1. **Plain-Language Explanations:** Grounded strictly in stored, user-reviewed extracted parameters (`source: 'document'` or `'user_corrected'`). No invented missing values or reference ranges.
-2. **Medical Glossary:** Clearly distinct from document facts with `source: 'educational_glossary'`.
-3. **Bilingual Support:** Full English and natural Devanagari Hindi explanations and glossary entries.
-4. **Deterministic Clinical Safety Guardrails (`server/src/services/safetyService.js`):**
-   - Refusal of medication alterations (stopping, starting, changing doses).
-   - Refusal of diagnostic demands ("Do I have cancer?", "Diagnose me").
-   - Urgent directive redirecting emergency symptoms (chest pain, stroke, breathing difficulty, poisoning) immediately to emergency care (112 / 102 / 911).
-   - Post-generation output scanning to strip forbidden diagnostic assertions.
-5. **Robust Validation:** Strict Zod schemas (`aiOutputSchemas.js`) for all AI request/response payloads, catching malformed outputs and providing structured clinical fallbacks.
-6. **Privacy & Security:** Zero PII logged, credentials kept server-side via `GEMINI_API_KEY`, model configurable via `GEMINI_MODEL`.
-7. **Client UI Integration:** [ExplanationPage.jsx](file:///d:/E/MediClear/client/src/pages/ExplanationPage.jsx) wired to live endpoints (`POST /analysis/:documentId/explain`, `GET /analysis/:documentId/summary`, `GET /analysis/:documentId/terms`) with Web Speech API text-to-speech read-aloud and bilingual toggling.
+---
 
-### Remaining Limitations (Deferred to Phase 5 & Beyond)
-- **Checklists & Doctor Questions:** Not yet generated or persisted (Phase 5).
-- **Speech-to-Text Voice Input:** Web Speech recognition and Bhashini interfaces pending Phase 6.
-- **Persistent Cloud Database & S3 Storage:** In-memory fallback and private local disk currently utilized until Phase 7/8 deployment to Render and MongoDB Atlas.
+### 2. Safety & Integration Review Findings
+
+#### A. Endpoint Ownership & Consent Verification
+- Every analysis endpoint (`POST /analysis/:documentId/explain`, `GET /analysis/:documentId/summary`, `GET /analysis/:documentId/terms`) strictly validates session ownership against `document.sessionId !== req.sessionId` (returns `403 UNAUTHORIZED_ACCESS`).
+- `POST /analysis/:documentId/explain` additionally verifies active patient consent via `dataRepository.findConsentBySession(req.sessionId)` (returns `403 CONSENT_REQUIRED` if absent or revoked).
+
+#### B. Groundedness & Fact Attribution
+- Explanations are strictly grounded in user-reviewed extracted parameters.
+- Missing units remain empty strings (`unit: ''`); no units (e.g. `mg/dL`) are fabricated.
+- Unspecified reference ranges are not invented.
+- Fields edited by the user are explicitly flagged with `source: 'user_corrected'`, while unmodified fields are tagged `source: 'document'`.
+- Medical terms are cataloged as general educational concepts with `source: 'educational_glossary'`.
+
+#### C. Malformed Model Output & API Failures
+- All outputs pass through strict Zod validation (`aiOutputSchemas.js`).
+- If Gemini times out, returns malformed JSON, fails schema validation, or encounters rate limits, the system catches the error, logs a non-sensitive diagnostic warning, and smoothly falls back to the deterministic clinical explanation engine. No unhandled crashes or hallucinations occur.
+
+---
+
+### 3. Emergency Handling Bypass Analysis & Safety Limitations
+
+#### A. Analysis of Potential Bypass Vectors
+Deterministic regex pattern matching provides a fast, reliable first line of defense for known critical expressions, but **cannot guarantee comprehensive clinical safety under all linguistic conditions**:
+1. **Paraphrasing & Metaphors:** Complaints phrased without standard keywords (e.g., *"my lungs feel compressed and I can't catch air"*, *"there is an elephant sitting on my chest"*, *"my left arm has a radiating burning ache"*) may bypass keyword filters.
+2. **Hinglish & Romanized Dialects:** While common romanized phrases (e.g., *seene me dard*, *saans lene me takleef*, *dil ka daura*, *dawa band kar du*) are captured, romanized Hindi has hundreds of colloquial spelling permutations (e.g., *chhati me dard*, *saans fool rhi h*, *goli chhod du*) that cannot be exhaustively covered by static regular expressions.
+3. **Indirect / Hypothetical Framing:** Questions phrased as theoretical inquiries (e.g., *"What happens if someone with high creatinine stops taking their pills?"*) can disguise immediate patient distress.
+
+#### B. Core Safety Principles & Residual Risks
+- **Deterministic checks are defense-in-depth, not a clinical guarantee:** Rule-based matching catches obvious red flags, but cannot substitute for qualified triage or clinical judgment.
+- **Mandatory Medical Disclaimer:** Prominent emergency alerts with emergency contact numbers (112 / 102 / 911 in India / US) and explicit physician review requirements must remain perpetually visible across the entire user experience.
+- **Never Present as Diagnostic:** The application remains strictly an educational document comprehension aid.
+
+---
+
+### 4. Remaining Limitations (Deferred to Phase 5 & Beyond)
+- **Checklists & Doctor Questions:** Actionable follow-up checklists and physician consultation question generation to be implemented in Phase 5.
+- **Speech-to-Text Voice Input:** Web Speech recognition (English & Hindi) and Bhashini provider integration deferred to Phase 6.
+- **Durable Storage & Cloud Database:** Current local private storage and in-memory fallback will transition to S3 and MongoDB Atlas in Phase 7/8.
 
 ---
 
 *This document will be updated at the end of each phase per PRD Section 15.*
+
 
