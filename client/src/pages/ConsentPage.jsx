@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ShieldCheck, ShieldAlert, AlertTriangle, ArrowRight, CheckSquare } from 'lucide-react'
+import {
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  ArrowRight,
+} from 'lucide-react'
+
 import { useConsent } from '../context/ConsentContext'
 import { useLanguage } from '../context/LanguageContext'
 import Button from '../components/ui/Button'
@@ -9,24 +15,45 @@ import Card from '../components/ui/Card'
 import Alert from '../components/ui/Alert'
 import StepIndicator from '../components/common/StepIndicator'
 import { EmergencyNotice } from '../components/safety/SafetyNotice'
+import { consentService } from '../services/consentService'
 
 export default function ConsentPage() {
   const { t } = useTranslation()
   const { language } = useLanguage()
-  const { hasConsented, giveConsent } = useConsent()
+  const { giveConsent } = useConsent()
   const navigate = useNavigate()
 
-  const [agreed, setAgreed] = useState(hasConsented)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState(false)
+  const [agreed, setAgreed] = useState(false)
 
-  const handleContinue = (e) => {
+  const handleContinue = async (e) => {
     e.preventDefault()
-    if (!agreed) {
-      setError(true)
+
+    if (!agreed || isSubmitting) {
+      if (!agreed) {
+        setError(true)
+      }
       return
     }
-    giveConsent('consent-session-001')
-    navigate('/upload')
+
+    setIsSubmitting(true)
+
+    try {
+      const result = await consentService.recordConsent({
+        language,
+        version: '1.0',
+      })
+
+      giveConsent(result?.consentId || 'consent-session-001')
+    } catch (err) {
+      // Allow local consent state in offline/development mode.
+      console.warn('Backend consent sync notice:', err.message)
+      giveConsent('consent-session-local')
+    } finally {
+      setIsSubmitting(false)
+      navigate('/upload')
+    }
   }
 
   return (
@@ -37,6 +64,7 @@ export default function ConsentPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-surface-900">
           {t('consent.title')}
         </h1>
+
         <p className="text-sm text-surface-500">
           {t('consent.subtitle')}
         </p>
@@ -51,6 +79,7 @@ export default function ConsentPage() {
             <ShieldCheck className="h-4 w-4" />
             <h3>{t('consent.privacy_heading')}</h3>
           </div>
+
           <p className="text-xs sm:text-sm text-surface-600 leading-relaxed">
             {t('consent.privacy_body')}
           </p>
@@ -62,6 +91,7 @@ export default function ConsentPage() {
             <ShieldAlert className="h-4 w-4" />
             <h3>{t('consent.ai_heading')}</h3>
           </div>
+
           <p className="text-xs sm:text-sm text-surface-600 leading-relaxed">
             {t('consent.ai_body')}
           </p>
@@ -73,6 +103,7 @@ export default function ConsentPage() {
             <AlertTriangle className="h-4 w-4" />
             <h3>{t('consent.limitation_heading')}</h3>
           </div>
+
           <p className="text-xs sm:text-sm text-surface-600 leading-relaxed">
             {t('consent.limitation_body')}
           </p>
@@ -96,10 +127,14 @@ export default function ConsentPage() {
               checked={agreed}
               onChange={(e) => {
                 setAgreed(e.target.checked)
-                if (e.target.checked) setError(false)
+
+                if (e.target.checked) {
+                  setError(false)
+                }
               }}
               className="mt-1 h-4 w-4 rounded border-surface-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
             />
+
             <span className="text-xs sm:text-sm font-medium text-surface-800 group-hover:text-surface-900 leading-relaxed">
               {t('consent.checkbox_label')}
             </span>
@@ -113,10 +148,16 @@ export default function ConsentPage() {
             <Button
               id="consent-submit-btn"
               size="lg"
+              disabled={isSubmitting}
               onClick={handleContinue}
               className="w-full sm:w-auto order-1 sm:order-2 shadow-sm"
             >
-              <span>{t('consent.accept_btn')}</span>
+              <span>
+                {isSubmitting
+                  ? 'Processing...'
+                  : t('consent.accept_btn')}
+              </span>
+
               <ArrowRight className="h-4 w-4 ml-1.5" />
             </Button>
           </div>

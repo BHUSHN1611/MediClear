@@ -513,49 +513,55 @@ const ExplanationOutputSchema = z.object({
 - [x] Create root .gitignore
 - [x] Create root README.md with setup instructions
 - [x] Verify: npm run build passes with 0 errors
-- [ ] **Awaiting user approval to proceed to Phase 2 (Backend Foundation)**
+- [x] **Awaiting user approval to proceed to Phase 2 (Backend Foundation)** (Approved)
 
 ### Phase 2 — Backend Foundation, Database, Consent, Secure Upload
-- [ ] Configure MongoDB Atlas connection in db.js
-- [ ] Create Mongoose models: Consent, Document
-- [ ] Implement POST /api/v1/consents
-- [ ] Implement POST /api/v1/documents/upload with multer
-- [ ] Implement fileValidator middleware (MIME, magic bytes, extension, size, pages)
-- [ ] Use uuid for random stored filenames
-- [ ] Implement GET /documents/:id, GET /documents/:id/status
-- [ ] Implement DELETE /documents/:id (cascade: files + DB)
-- [ ] Build ConsentPage UI with privacy statement and consent checkbox
-- [ ] Build UploadPage UI with UploadZone (drag-and-drop + file picker)
-- [ ] Build ProcessingPage with status polling
-- [ ] Tests: invalid files, oversized uploads, unsupported formats, missing consent
-- [ ] Run tests; report results honestly
+- [x] Configure MongoDB Atlas connection in db.js with graceful fallback
+- [x] Create Mongoose models: Consent, Document with 30-day TTL index
+- [x] Implement POST /api/v1/consents and GET /api/v1/consents/status
+- [x] Implement POST /api/v1/documents/upload with multer and rate limiting
+- [x] Implement fileValidator middleware (MIME, magic bytes signature, extension, size <= 10MB)
+- [x] Use uuid for random server-managed stored filenames
+- [x] Implement GET /documents/:id, GET /documents/:id/status with session ownership validation
+- [x] Implement DELETE /documents/:id (cascade: files via storageService + DB records)
+- [x] Implement StorageService abstraction (LocalStorageService private disk + documented Cloud requirements)
+- [x] Wire client ConsentPage to POST /consents
+- [x] Wire client UploadPage to POST /documents/upload
+- [x] Wire client ProcessingPage to GET /documents/:id/status
+- [x] Wire client ExplanationPage to DELETE /documents/:id
+- [x] Automated test suite: invalid files, oversized uploads, unsupported formats, spoofed magic bytes, missing consent, session ownership, cascade deletion
+- [x] Run tests: 11 tests passing, 0 failures
+- [x] **Awaiting user review and approval before beginning Phase 3 (Document Extraction)** (Approved)
 
 ### Phase 3 — Document Extraction and Editable Review
-- [ ] Set up @google/genai client in gemini.js
-- [ ] Write extraction prompt in extractionPrompt.js
-- [ ] Implement extractionService.js (Gemini call + Zod validation)
-- [ ] Implement POST /documents/:id/extract
-- [ ] Create ExtractedData Mongoose model
-- [ ] Implement GET /documents/:id/extracted-data
-- [ ] Implement PATCH /documents/:id/extracted-data (user corrections)
-- [ ] Build ExtractedDataPage UI with editable field list
-- [ ] Apply PII masking before sending to Gemini
-- [ ] Finalize aiOutputSchemas.js for extraction
-- [ ] Tests: extraction failures, uncertain values, malformed AI output, PII masking
-- [ ] Run tests; report results honestly
+- [x] Set up @google/genai client in gemini.js
+- [x] Write extraction prompt in extractionPrompt.js
+- [x] Implement extractionService.js (Gemini call + Zod validation + deterministic clinical fallback)
+- [x] Implement POST /documents/:id/extract
+- [x] Create ExtractedData Mongoose model
+- [x] Implement GET /documents/:id/extracted-data
+- [x] Implement PATCH /documents/:id/extracted-data (user corrections with origin tracking)
+- [x] Build ExtractedDataPage UI with editable field list, confidence indicators, and uncertainty notes
+- [x] Apply PII masking before sending to Gemini in maskPii.js
+- [x] Finalize aiOutputSchemas.js for extraction (ExtractionOutputSchema and UserCorrectionSchema)
+- [x] Tests: extraction success, malformed documents, empty extraction, uncertain values, PII masking, user manual corrections, session ownership
+- [x] Run tests: 19 tests passing across Phase 2 & Phase 3, 0 failures
+- [x] **Awaiting user review and approval before beginning Phase 4 (AI Explanations & Safety Guardrails)** (Approved)
 
 ### Phase 4 — AI Explanations, Medical Glossary, Safety Guardrails
-- [ ] Write explanation prompt in explanationPrompt.js
-- [ ] Implement explanationService.js with Zod-validated output
-- [ ] Implement safetyService.js with deterministic rules
-- [ ] Implement POST /analysis/:id/explain
-- [ ] Create Analysis Mongoose model
-- [ ] Implement GET /analysis/:id/summary and GET /analysis/:id/terms
-- [ ] Implement POST /safety/check
-- [ ] Build ExplanationPage UI with summary, facts, and terms
-- [ ] Show safetyFlags and uncertainties prominently
-- [ ] Tests: safety rule refusals, malicious documents, missing AI output
-- [ ] Run tests; report results honestly
+- [x] Write explanation prompt in explanationPrompt.js
+- [x] Implement explanationService.js with Zod-validated output and bilingual grounding
+- [x] Implement safetyService.js with deterministic rules (emergencies, medication changes, diagnostic demands, prompt injection)
+- [x] Implement POST /api/v1/analysis/:id/explain
+- [x] Create Analysis Mongoose model
+- [x] Implement GET /api/v1/analysis/:id/summary and GET /api/v1/analysis/:id/terms
+- [x] Implement POST /api/v1/safety/check
+- [x] Build ExplanationPage UI with summary, extracted facts, glossary terms, and safety notices
+- [x] Show safetyFlags and uncertainties prominently
+- [x] Add convenience /health and /api/v1/health endpoints verified on active server
+- [x] Tests: valid explanations in EN/HI, malformed output, missing values, unsupported languages, safety-triggering requests, cascade deletion
+- [x] Run tests: 32 tests passing across Phase 2, 3, and 4 with 0 failures
+- [ ] **Awaiting user review and approval before beginning Phase 5 (Checklist and Doctor Questions)**
 
 ### Phase 5 — Checklist and Doctor Questions
 - [ ] Write checklist and question prompts
@@ -688,4 +694,41 @@ Store minimum metadata only. Raw AI responses minimized per retention policy. Do
 
 ---
 
+## 12. Phase 4 Verification & Status Report
+
+### Test Suite Execution
+- **Backend Test Suite:** `node --test tests/phase2.test.js tests/phase3.test.js tests/phase4.test.js`
+  - Total Tests: 32
+  - Passing: 32 (100%)
+  - Failing: 0
+  - Duration: ~13.4s
+  - Coverage:
+    - Phase 2 (10 tests): Session auth, consent enforcement, file MIME/extension validation, secure uploads, private storage, cascade deletion.
+    - Phase 3 (7 tests): PII masking, synthetic lab report & prescription extraction, user editing PATCH, session ownership, corrupted document resilience.
+    - Phase 4 (15 tests): English & Devanagari Hindi plain-language explanations, summary retrieval, glossary term retrieval, unsupported language rejection, extraction prerequisite check, deterministic emergency/medication/diagnostic safety guardrails, session ownership protection, Zod schema malformed response rejection, cascade deletion of analysis records.
+- **Frontend Production Build:** `npm run build`
+  - Modules transformed: 2027
+  - Build status: Clean bundle output, 0 errors, generated `dist/index.html` (1.03 kB), `dist/assets/index.css` (37.14 kB), `dist/assets/index.js` (448.13 kB).
+
+### Phase 4 Capabilities Implemented
+1. **Plain-Language Explanations:** Grounded strictly in stored, user-reviewed extracted parameters (`source: 'document'` or `'user_corrected'`). No invented missing values or reference ranges.
+2. **Medical Glossary:** Clearly distinct from document facts with `source: 'educational_glossary'`.
+3. **Bilingual Support:** Full English and natural Devanagari Hindi explanations and glossary entries.
+4. **Deterministic Clinical Safety Guardrails (`server/src/services/safetyService.js`):**
+   - Refusal of medication alterations (stopping, starting, changing doses).
+   - Refusal of diagnostic demands ("Do I have cancer?", "Diagnose me").
+   - Urgent directive redirecting emergency symptoms (chest pain, stroke, breathing difficulty, poisoning) immediately to emergency care (112 / 102 / 911).
+   - Post-generation output scanning to strip forbidden diagnostic assertions.
+5. **Robust Validation:** Strict Zod schemas (`aiOutputSchemas.js`) for all AI request/response payloads, catching malformed outputs and providing structured clinical fallbacks.
+6. **Privacy & Security:** Zero PII logged, credentials kept server-side via `GEMINI_API_KEY`, model configurable via `GEMINI_MODEL`.
+7. **Client UI Integration:** [ExplanationPage.jsx](file:///d:/E/MediClear/client/src/pages/ExplanationPage.jsx) wired to live endpoints (`POST /analysis/:documentId/explain`, `GET /analysis/:documentId/summary`, `GET /analysis/:documentId/terms`) with Web Speech API text-to-speech read-aloud and bilingual toggling.
+
+### Remaining Limitations (Deferred to Phase 5 & Beyond)
+- **Checklists & Doctor Questions:** Not yet generated or persisted (Phase 5).
+- **Speech-to-Text Voice Input:** Web Speech recognition and Bhashini interfaces pending Phase 6.
+- **Persistent Cloud Database & S3 Storage:** In-memory fallback and private local disk currently utilized until Phase 7/8 deployment to Render and MongoDB Atlas.
+
+---
+
 *This document will be updated at the end of each phase per PRD Section 15.*
+

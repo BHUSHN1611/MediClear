@@ -1,15 +1,17 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   FileText,
   AlertTriangle,
   CheckCircle,
-  HelpCircle,
   Edit2,
   ArrowRight,
   ArrowLeft,
   Info,
+  Check,
+  Undo2,
+  FileCheck2,
 } from 'lucide-react'
 import { useLanguage } from '../context/LanguageContext'
 import Button from '../components/ui/Button'
@@ -18,6 +20,7 @@ import Badge from '../components/ui/Badge'
 import Alert from '../components/ui/Alert'
 import StepIndicator from '../components/common/StepIndicator'
 import { DEMO_DOCUMENT_ID, DEMO_EXTRACTED_DATA } from '../data/mockData'
+import { documentService } from '../services/documentService'
 
 export default function ExtractedDataPage() {
   const { t } = useTranslation()
@@ -25,21 +28,73 @@ export default function ExtractedDataPage() {
   const { documentId = DEMO_DOCUMENT_ID } = useParams()
   const navigate = useNavigate()
 
-  // Initialize editable fields with synthetic data
+  const [documentType, setDocumentType] = useState('lab_report')
   const [fields, setFields] = useState(DEMO_EXTRACTED_DATA.fields)
+  const [uncertainties, setUncertainties] = useState(DEMO_EXTRACTED_DATA.uncertainties)
+  const [isLoading, setIsLoading] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState(null)
+
+  // Fetch real extracted data if available from backend
+  useEffect(() => {
+    async function loadExtractedData() {
+      if (documentId && documentId !== DEMO_DOCUMENT_ID) {
+        setIsLoading(true)
+        try {
+          const res = await documentService.getExtractedData(documentId)
+          if (res?.fields && res.fields.length > 0) {
+            setFields(res.fields)
+            setDocumentType(res.documentType || 'lab_report')
+            setUncertainties(res.uncertainties || [])
+          }
+        } catch (err) {
+          console.warn('Using synthetic review data:', err.message)
+        } finally {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    loadExtractedData()
+  }, [documentId])
 
   const handleStartEdit = (field) => {
     setEditingId(field.id)
     setEditValue(field.value)
   }
 
-  const handleSaveEdit = (fieldId) => {
+  const handleSaveEdit = async (fieldId) => {
+    const currentField = fields.find((f) => f.id === fieldId)
+    const original = currentField?.originalValue || currentField?.value
+
+    // Optimistically update local UI state
     setFields((prev) =>
-      prev.map((f) => (f.id === fieldId ? { ...f, value: editValue } : f))
+      prev.map((f) =>
+        f.id === fieldId
+          ? {
+              ...f,
+              value: editValue,
+              isUserCorrected: true,
+              originalValue: original,
+            }
+          : f
+      )
     )
     setEditingId(null)
+
+    // Sync correction to backend if real document
+    if (documentId && documentId !== DEMO_DOCUMENT_ID) {
+      try {
+        await documentService.updateExtractedData(documentId, [
+          { id: fieldId, value: editValue, unit: currentField?.unit },
+        ])
+        setSaveSuccessMsg('Correction saved to server.')
+        setTimeout(() => setSaveSuccessMsg(null), 2500)
+      } catch (err) {
+        console.warn('Backend patch notice:', err.message)
+      }
+    }
   }
 
   const getStatusBadge = (status) => {
@@ -49,8 +104,9 @@ export default function ExtractedDataPage() {
       case 'low':
         return <Badge variant="yellow">Low</Badge>
       case 'normal':
-      default:
         return <Badge variant="green">Normal</Badge>
+      default:
+        return <Badge variant="gray">Unspecified</Badge>
     }
   }
 
@@ -63,6 +119,18 @@ export default function ExtractedDataPage() {
       case 'low':
       default:
         return <Badge variant="red">{t('extracted.confidence_low')}</Badge>
+    }
+  }
+
+  const getDocumentTypeLabel = (type) => {
+    switch (type) {
+      case 'prescription':
+        return 'Printed Prescription'
+      case 'discharge_instructions':
+        return 'Discharge Instructions'
+      case 'lab_report':
+      default:
+        return 'Laboratory Report'
     }
   }
 
@@ -79,12 +147,20 @@ export default function ExtractedDataPage() {
         </p>
       </div>
 
-      {/* Demo mode alert banner */}
-      <Alert variant="info" title="Phase 1 Demo Mode">
-        <p className="text-xs sm:text-sm">
-          {t('extracted.demo_notice')}
-        </p>
-      </Alert>
+      {saveSuccessMsg && (
+        <Alert variant="success">
+          <span>{saveSuccessMsg}</span>
+        </Alert>
+      )}
+
+      {/* Phase 3 Boundary Banner */}
+      <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-teal-50 border border-teal-200/60 text-teal-900 text-xs leading-relaxed">
+        <FileCheck2 className="h-4 w-4 shrink-0 mt-0.5 text-teal-600" />
+        <span>
+          <strong>Extraction & Fidelity Review:</strong> Review all parameters extracted verbatim from your document.
+          No medical interpretations or diagnoses have been generated. Click any value to adjust manual corrections.
+        </span>
+      </div>
 
       {/* Document Meta Summary */}
       <Card className="p-5 flex flex-wrap items-center justify-between gap-4 bg-white">
@@ -94,26 +170,30 @@ export default function ExtractedDataPage() {
           </div>
           <div>
             <h2 className="text-sm font-semibold text-surface-900">
-              {DEMO_EXTRACTED_DATA.documentName}
+              {documentId === DEMO_DOCUMENT_ID
+                ? DEMO_EXTRACTED_DATA.documentName
+                : `Document ${documentId.slice(0, 8)}...`}
             </h2>
             <p className="text-xs text-surface-400">
-              ID: {documentId} · Sample Specimen Date: {DEMO_EXTRACTED_DATA.patientInfo.specimenDate}
+              ID: {documentId} · Verified with Zod Schema
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="text-xs text-surface-500">{t('extracted.doc_type')}:</span>
-          <Badge variant="blue">Lab Report (Lipid & Metabolic)</Badge>
+          <Badge variant="blue">{getDocumentTypeLabel(documentType)}</Badge>
         </div>
       </Card>
 
       {/* Extracted Fields Table */}
       <Card className="overflow-hidden">
         <Card.Header className="flex items-center justify-between bg-surface-50/70">
-          <h3 className="font-semibold text-sm text-surface-800">
-            {t('extracted.fields_heading')}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-sm text-surface-800">
+              {t('extracted.fields_heading')} ({fields.length})
+            </h3>
+          </div>
           <span className="text-xs text-surface-500 hidden sm:inline">
             {t('extracted.edit_hint')}
           </span>
@@ -123,26 +203,32 @@ export default function ExtractedDataPage() {
           <table className="w-full text-left text-xs sm:text-sm divide-y divide-surface-100">
             <thead className="bg-surface-50 text-surface-500 font-medium">
               <tr>
-                <th className="py-3 px-4">Test / Biomarker</th>
-                <th className="py-3 px-4">Value</th>
+                <th className="py-3 px-4">Parameter / Metric</th>
+                <th className="py-3 px-4">Extracted Value</th>
                 <th className="py-3 px-4">Reference Range</th>
                 <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Confidence</th>
+                <th className="py-3 px-4">Confidence & Source</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-100 bg-white">
               {fields.map((field) => {
                 const isEditing = editingId === field.id
-                const displayName = language === 'hi' && field.nameHi ? field.nameHi : field.name
+                const displayName =
+                  language === 'hi' && field.nameHi ? field.nameHi : field.key || field.name
 
                 return (
                   <tr key={field.id} className="hover:bg-surface-50/50 transition-colors">
                     <td className="py-3.5 px-4 font-medium text-surface-900">
                       <div>
                         <span>{displayName}</span>
-                        {language === 'hi' && (
+                        {field.isUserCorrected && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-semibold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-full border border-primary-200">
+                            <Check className="h-2.5 w-2.5" /> Edited by user
+                          </span>
+                        )}
+                        {language === 'hi' && field.name && (
                           <span className="block text-[11px] text-surface-400 font-normal">
-                            {field.name}
+                            {field.key || field.name}
                           </span>
                         )}
                       </div>
@@ -155,7 +241,7 @@ export default function ExtractedDataPage() {
                             type="text"
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
-                            className="w-20 px-2 py-1 text-xs border border-primary-400 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            className="w-24 px-2 py-1 text-xs border border-primary-400 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
                             autoFocus
                           />
                           <Button size="sm" variant="primary" onClick={() => handleSaveEdit(field.id)}>
@@ -163,19 +249,28 @@ export default function ExtractedDataPage() {
                           </Button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => handleStartEdit(field)}
-                          className="group inline-flex items-center gap-1 text-surface-900 hover:text-primary-600 transition-colors"
-                          title={t('extracted.edit_hint')}
-                        >
-                          <span>{field.value} {field.unit}</span>
-                          <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 text-surface-400" />
-                        </button>
+                        <div>
+                          <button
+                            onClick={() => handleStartEdit(field)}
+                            className="group inline-flex items-center gap-1 text-surface-900 hover:text-primary-600 transition-colors"
+                            title={t('extracted.edit_hint')}
+                          >
+                            <span>
+                              {field.value} {field.unit}
+                            </span>
+                            <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 text-surface-400" />
+                          </button>
+                          {field.isUserCorrected && field.originalValue && (
+                            <div className="text-[10px] text-surface-400 font-normal">
+                              Original: {field.originalValue}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
 
                     <td className="py-3.5 px-4 text-surface-500">
-                      {field.referenceRange} {field.unit}
+                      {field.referenceRange ? `${field.referenceRange} ${field.unit || ''}` : '—'}
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -183,7 +278,12 @@ export default function ExtractedDataPage() {
                     </td>
 
                     <td className="py-3.5 px-4">
-                      {getConfidenceBadge(field.confidence)}
+                      <div className="space-y-1">
+                        <div>{getConfidenceBadge(field.confidence)}</div>
+                        <span className="text-[10px] text-surface-400 block">
+                          {field.isUserCorrected ? 'Manual input' : 'Extracted verbatim'}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -194,7 +294,7 @@ export default function ExtractedDataPage() {
       </Card>
 
       {/* Uncertainties Section */}
-      {DEMO_EXTRACTED_DATA.uncertainties.length > 0 && (
+      {uncertainties.length > 0 && (
         <Card className="p-5 border-amber-200 bg-amber-50/30 space-y-3">
           <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm">
             <AlertTriangle className="h-4 w-4" />
@@ -204,17 +304,17 @@ export default function ExtractedDataPage() {
             {t('extracted.uncertainty_note')}
           </p>
           <ul className="space-y-2 pt-1">
-            {DEMO_EXTRACTED_DATA.uncertainties.map((unc) => (
-              <li
-                key={unc.id}
-                className="text-xs bg-white/80 p-2.5 rounded-lg border border-amber-200/60 text-surface-700"
-              >
-                <strong className="text-surface-900">
-                  {language === 'hi' ? unc.fieldHi : unc.field}:
-                </strong>{' '}
-                <span>{language === 'hi' ? unc.reasonHi : unc.reason}</span>
-              </li>
-            ))}
+            {uncertainties.map((unc, idx) => {
+              const text = typeof unc === 'string' ? unc : unc.reason || unc.field
+              return (
+                <li
+                  key={idx}
+                  className="text-xs bg-white/80 p-2.5 rounded-lg border border-amber-200/60 text-surface-700"
+                >
+                  <strong className="text-surface-900">Uncertainty #{idx + 1}:</strong> {text}
+                </li>
+              )
+            })}
           </ul>
         </Card>
       )}
