@@ -25,6 +25,7 @@ import StepIndicator from '../components/common/StepIndicator'
 import { DEMO_DOCUMENT_ID, DEMO_EXPLANATION_DATA } from '../data/mockData'
 import { documentService } from '../services/documentService'
 import { analysisService } from '../services/analysisService'
+import SpeechReader from '../components/voice/SpeechReader'
 
 export default function ExplanationPage() {
   const { t } = useTranslation()
@@ -151,25 +152,7 @@ export default function ExplanationPage() {
 
         <div className="flex items-center gap-2">
           {/* TTS Listen Button */}
-          <Button
-            size="sm"
-            variant="teal"
-            onClick={handleToggleSpeech}
-            className="shadow-sm"
-            title={isPlayingAudio ? t('explanation.stop_btn') : t('explanation.listen_btn')}
-          >
-            {isPlayingAudio ? (
-              <>
-                <VolumeX className="h-4 w-4 mr-1.5" />
-                <span>{t('explanation.stop_btn')}</span>
-              </>
-            ) : (
-              <>
-                <Volume2 className="h-4 w-4 mr-1.5" />
-                <span>{t('explanation.listen_btn')}</span>
-              </>
-            )}
-          </Button>
+          <SpeechReader text={summaryBullets.join('. ')} variant="teal" />
 
           {/* Delete Document Button */}
           <Button

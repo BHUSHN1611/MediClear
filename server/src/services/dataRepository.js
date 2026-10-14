@@ -5,12 +5,16 @@ import ConsentModel from '../models/Consent.js'
 import DocumentModel from '../models/Document.js'
 import ExtractedDataModel from '../models/ExtractedData.js'
 import AnalysisModel from '../models/Analysis.js'
+import { ChecklistModel } from '../models/Checklist.js'
+import { DoctorQuestionsModel } from '../models/DoctorQuestions.js'
 
 // In-memory fallback stores (active when running offline/in-memory test mode)
 const memoryConsents = new Map()
 const memoryDocuments = new Map()
 const memoryExtractedData = new Map()
 const memoryAnalyses = new Map()
+const memoryChecklists = new Map()
+const memoryDoctorQuestions = new Map()
 
 export const dataRepository = {
   // === CONSENT METHODS ===
@@ -137,12 +141,20 @@ export const dataRepository = {
       await AnalysisModel.deleteMany({
         $or: [{ documentId }, { documentIdStr: documentId }],
       })
+      await ChecklistModel.deleteMany({
+        $or: [{ documentId }, { documentIdStr: documentId }],
+      })
+      await DoctorQuestionsModel.deleteMany({
+        $or: [{ documentId }, { documentIdStr: documentId }],
+      })
       const result = await DocumentModel.findByIdAndDelete(documentId)
       return !!result
     }
 
     memoryExtractedData.delete(documentId)
     memoryAnalyses.delete(documentId)
+    memoryChecklists.delete(documentId)
+    memoryDoctorQuestions.delete(documentId)
     return memoryDocuments.delete(documentId)
   },
 
@@ -343,10 +355,191 @@ export const dataRepository = {
     return memoryAnalyses.get(documentId) || null
   },
 
+  // === CHECKLIST METHODS (PHASE 5) ===
+  async createOrUpdateChecklist({
+    documentId,
+    sessionId,
+    language = 'en',
+    documentType = 'unknown',
+    items = [],
+  }) {
+    if (isDbConnected()) {
+      const query = {
+        $or: [
+          { documentIdStr: documentId },
+          ...(documentId.match(/^[0-9a-fA-F]{24}$/) ? [{ documentId }] : []),
+        ],
+        language,
+      }
+      const update = {
+        documentIdStr: documentId,
+        ...(documentId.match(/^[0-9a-fA-F]{24}$/) ? { documentId } : {}),
+        sessionId,
+        language,
+        documentType,
+        items,
+        generatedAt: new Date(),
+        updatedAt: new Date(),
+      }
+      const doc = await ChecklistModel.findOneAndUpdate(query, update, {
+        upsert: true,
+        new: true,
+      })
+      return doc.toObject ? doc.toObject() : doc
+    }
+
+    const key = `${documentId}_${language}`
+    const checklist = {
+      _id: uuidv4(),
+      documentId,
+      documentIdStr: documentId,
+      sessionId,
+      language,
+      documentType,
+      items,
+      generatedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+    memoryChecklists.set(key, checklist)
+    memoryChecklists.set(documentId, checklist)
+    return checklist
+  },
+
+  async findChecklistByDocument(documentId, language) {
+    if (isDbConnected()) {
+      const query = {
+        $or: [
+          { documentIdStr: documentId },
+          ...(documentId.match(/^[0-9a-fA-F]{24}$/) ? [{ documentId }] : []),
+        ],
+        ...(language ? { language } : {}),
+      }
+      const doc = await ChecklistModel.findOne(query).sort({ updatedAt: -1 })
+      return doc ? (doc.toObject ? doc.toObject() : doc) : null
+    }
+
+    if (language) {
+      const key = `${documentId}_${language}`
+      if (memoryChecklists.has(key)) return memoryChecklists.get(key)
+    }
+    return memoryChecklists.get(documentId) || null
+  },
+
+  async updateChecklistItem(documentId, itemId, isCompleted) {
+    if (isDbConnected()) {
+      const query = {
+        $or: [
+          { documentIdStr: documentId },
+          ...(documentId.match(/^[0-9a-fA-F]{24}$/) ? [{ documentId }] : []),
+        ],
+        'items.id': itemId,
+      }
+      const doc = await ChecklistModel.findOneAndUpdate(
+        query,
+        {
+          $set: {
+            'items.$.isCompleted': isCompleted,
+            updatedAt: new Date(),
+          },
+        },
+        { new: true }
+      )
+      return doc ? (doc.toObject ? doc.toObject() : doc) : null
+    }
+
+    // Try finding in language-specific or general memory store
+    for (const [key, checklist] of memoryChecklists.entries()) {
+      if (key === documentId || key.startsWith(`${documentId}_`)) {
+        const item = (checklist.items || []).find((i) => i.id === itemId)
+        if (item) {
+          item.isCompleted = isCompleted
+          checklist.updatedAt = new Date()
+          return checklist
+        }
+      }
+    }
+
+    return null
+  },
+
+  // === DOCTOR QUESTIONS METHODS (PHASE 5) ===
+  async createOrUpdateDoctorQuestions({
+    documentId,
+    sessionId,
+    language = 'en',
+    documentType = 'unknown',
+    questions = [],
+  }) {
+    if (isDbConnected()) {
+      const query = {
+        $or: [
+          { documentIdStr: documentId },
+          ...(documentId.match(/^[0-9a-fA-F]{24}$/) ? [{ documentId }] : []),
+        ],
+        language,
+      }
+      const update = {
+        documentIdStr: documentId,
+        ...(documentId.match(/^[0-9a-fA-F]{24}$/) ? { documentId } : {}),
+        sessionId,
+        language,
+        documentType,
+        questions,
+        generatedAt: new Date(),
+        updatedAt: new Date(),
+      }
+      const doc = await DoctorQuestionsModel.findOneAndUpdate(query, update, {
+        upsert: true,
+        new: true,
+      })
+      return doc.toObject ? doc.toObject() : doc
+    }
+
+    const key = `${documentId}_${language}`
+    const record = {
+      _id: uuidv4(),
+      documentId,
+      documentIdStr: documentId,
+      sessionId,
+      language,
+      documentType,
+      questions,
+      generatedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+    memoryDoctorQuestions.set(key, record)
+    memoryDoctorQuestions.set(documentId, record)
+    return record
+  },
+
+  async findDoctorQuestionsByDocument(documentId, language) {
+    if (isDbConnected()) {
+      const query = {
+        $or: [
+          { documentIdStr: documentId },
+          ...(documentId.match(/^[0-9a-fA-F]{24}$/) ? [{ documentId }] : []),
+        ],
+        ...(language ? { language } : {}),
+      }
+      const doc = await DoctorQuestionsModel.findOne(query).sort({ updatedAt: -1 })
+      return doc ? (doc.toObject ? doc.toObject() : doc) : null
+    }
+
+    if (language) {
+      const key = `${documentId}_${language}`
+      if (memoryDoctorQuestions.has(key)) return memoryDoctorQuestions.get(key)
+    }
+    return memoryDoctorQuestions.get(documentId) || null
+  },
+
   clearMemory() {
     memoryConsents.clear()
     memoryDocuments.clear()
     memoryExtractedData.clear()
     memoryAnalyses.clear()
+    memoryChecklists.clear()
+    memoryDoctorQuestions.clear()
   },
 }

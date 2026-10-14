@@ -91,3 +91,65 @@ export const SafetyCheckRequestSchema = z.object({
   language: z.enum(['en', 'hi']).default('en'),
   documentId: z.string().optional(),
 })
+
+/**
+ * Checklist Item Schema
+ * Distinguishes concrete actions from the document vs general lifestyle/prep suggestions.
+ */
+export const ChecklistItemSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1, 'Checklist item title cannot be empty'),
+  description: z.string().optional().default(''),
+  category: z.string().default('general'),
+  source: z.enum(['document', 'general_suggestion']).default('document'),
+  isCompleted: z.boolean().default(false),
+})
+
+/**
+ * Complete Checklist Output Schema
+ */
+export const ChecklistOutputSchema = z.object({
+  documentId: z.string(),
+  language: z.enum(['en', 'hi']),
+  documentType: z.enum(['lab_report', 'prescription', 'discharge_instructions', 'unknown']).default('unknown'),
+  items: z.array(ChecklistItemSchema),
+  generatedAt: z.date().or(z.string()).optional(),
+})
+
+/**
+ * Checklist Item Toggle Request Schema (PATCH /checklists/:documentId/items/:itemId)
+ */
+export const ChecklistToggleSchema = z.object({
+  isCompleted: z.boolean(),
+})
+
+/**
+ * Doctor Question Item Schema
+ * Distinguishes questions grounded in document anomalies from general wellness questions.
+ */
+export const DoctorQuestionItemSchema = z.object({
+  id: z.string(),
+  question: z.string().min(1, 'Question text cannot be empty'),
+  category: z.string().default('General'),
+  rationale: z.string().optional().default(''),
+  source: z.enum(['document', 'general_suggestion']).default('document'),
+})
+
+/**
+ * Complete Doctor Questions Output Schema
+ */
+export const DoctorQuestionsOutputSchema = z.object({
+  documentId: z.string(),
+  language: z.enum(['en', 'hi']),
+  documentType: z.enum(['lab_report', 'prescription', 'discharge_instructions', 'unknown']).default('unknown'),
+  questions: z.array(DoctorQuestionItemSchema),
+  generatedAt: z.date().or(z.string()).optional(),
+})
+
+/**
+ * Generic Generation Request Schema (POST /checklists/:documentId/generate, POST /questions/:documentId/generate)
+ */
+export const GenerationRequestSchema = z.object({
+  language: z.enum(['en', 'hi']).default('en'),
+})
+
