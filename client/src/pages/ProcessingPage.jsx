@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Loader2, FileSearch, AlertOctagon, AlertTriangle, RefreshCw, ArrowLeft } from 'lucide-react'
@@ -12,8 +12,8 @@ export default function ProcessingPage() {
   const { documentId } = useParams()
   const navigate = useNavigate()
 
-  const [isLoading, setIsLoading] = useState(true)
   const [errorInfo, setErrorInfo] = useState(null)
+  const hasTriggeredRef = useRef(null)
   // errorInfo structure: { type: 'unsupported' | 'unreadable' | 'not_configured' | 'failed', message, reason }
 
   const runExtraction = useCallback(async (isCancelledRef) => {
@@ -23,14 +23,13 @@ export default function ProcessingPage() {
       return
     }
 
-    setIsLoading(true)
     setErrorInfo(null)
 
     try {
       const res = await documentService.extractDocument(documentId)
       if (isCancelledRef.current) return
 
-      if (res?.status === 'extracted') {
+      if (res?.status === 'extracted' || res?.cached || ['extracted', 'explaining', 'ready'].includes(res?.status)) {
         navigate(`/extracted/${documentId}`)
       } else {
         setErrorInfo({
@@ -83,13 +82,16 @@ export default function ProcessingPage() {
   }, [documentId, navigate, t])
 
   useEffect(() => {
+    if (hasTriggeredRef.current === documentId) return
+    hasTriggeredRef.current = documentId
+
     const isCancelledRef = { current: false }
     runExtraction(isCancelledRef)
 
     return () => {
       isCancelledRef.current = true
     }
-  }, [runExtraction])
+  }, [documentId, runExtraction])
 
   // REJECTION / ERROR STATE
   if (errorInfo) {
@@ -135,6 +137,7 @@ export default function ProcessingPage() {
                   size="md"
                   className="w-full"
                   onClick={() => {
+                    hasTriggeredRef.current = null
                     const isCancelledRef = { current: false }
                     runExtraction(isCancelledRef)
                   }}

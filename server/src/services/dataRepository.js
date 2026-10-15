@@ -147,6 +147,41 @@ export const dataRepository = {
     return null
   },
 
+  async invalidateDownstreamData(documentId) {
+    if (isDbConnected()) {
+      await Promise.all([
+        AnalysisModel.deleteMany({
+          $or: [{ documentId }, { documentIdStr: documentId }],
+        }),
+        ChecklistModel.deleteMany({
+          $or: [{ documentId }, { documentIdStr: documentId }],
+        }),
+        DoctorQuestionsModel.deleteMany({
+          $or: [{ documentId }, { documentIdStr: documentId }],
+        }),
+      ])
+      return true
+    }
+
+    // In-memory: purge all language keys matching `${documentId}_*` and exact `${documentId}`
+    for (const key of Array.from(memoryAnalyses.keys())) {
+      if (key === documentId || key.startsWith(`${documentId}_`)) {
+        memoryAnalyses.delete(key)
+      }
+    }
+    for (const key of Array.from(memoryChecklists.keys())) {
+      if (key === documentId || key.startsWith(`${documentId}_`)) {
+        memoryChecklists.delete(key)
+      }
+    }
+    for (const key of Array.from(memoryDoctorQuestions.keys())) {
+      if (key === documentId || key.startsWith(`${documentId}_`)) {
+        memoryDoctorQuestions.delete(key)
+      }
+    }
+    return true
+  },
+
   async deleteDocument(documentId) {
     if (isDbConnected()) {
       await ExtractedDataModel.deleteMany({
@@ -166,9 +201,21 @@ export const dataRepository = {
     }
 
     memoryExtractedData.delete(documentId)
-    memoryAnalyses.delete(documentId)
-    memoryChecklists.delete(documentId)
-    memoryDoctorQuestions.delete(documentId)
+    for (const key of Array.from(memoryAnalyses.keys())) {
+      if (key === documentId || key.startsWith(`${documentId}_`)) {
+        memoryAnalyses.delete(key)
+      }
+    }
+    for (const key of Array.from(memoryChecklists.keys())) {
+      if (key === documentId || key.startsWith(`${documentId}_`)) {
+        memoryChecklists.delete(key)
+      }
+    }
+    for (const key of Array.from(memoryDoctorQuestions.keys())) {
+      if (key === documentId || key.startsWith(`${documentId}_`)) {
+        memoryDoctorQuestions.delete(key)
+      }
+    }
     return memoryDocuments.delete(documentId)
   },
 
@@ -254,6 +301,7 @@ export const dataRepository = {
         const update = updatedMap.get(field.id)
         return {
           ...field,
+          key: update.key || field.key,
           value: update.value,
           unit: update.unit !== undefined ? update.unit : field.unit,
           isUserCorrected: true,
@@ -364,7 +412,7 @@ export const dataRepository = {
 
     if (language) {
       const key = `${documentId}_${language}`
-      if (memoryAnalyses.has(key)) return memoryAnalyses.get(key)
+      return memoryAnalyses.get(key) || null
     }
     return memoryAnalyses.get(documentId) || null
   },
@@ -435,7 +483,7 @@ export const dataRepository = {
 
     if (language) {
       const key = `${documentId}_${language}`
-      if (memoryChecklists.has(key)) return memoryChecklists.get(key)
+      return memoryChecklists.get(key) || null
     }
     return memoryChecklists.get(documentId) || null
   },
@@ -543,7 +591,7 @@ export const dataRepository = {
 
     if (language) {
       const key = `${documentId}_${language}`
-      if (memoryDoctorQuestions.has(key)) return memoryDoctorQuestions.get(key)
+      return memoryDoctorQuestions.get(key) || null
     }
     return memoryDoctorQuestions.get(documentId) || null
   },

@@ -277,6 +277,18 @@ export async function extractDocumentData({ document, buffer }) {
       } catch (callErr) {
         lastError = callErr
         const errMsg = callErr.message || ''
+        const isNonRetriable =
+          errMsg.includes('429') ||
+          errMsg.includes('RESOURCE_EXHAUSTED') ||
+          errMsg.includes('quota') ||
+          errMsg.includes('401') ||
+          errMsg.includes('403') ||
+          errMsg.includes('API_KEY') ||
+          errMsg.includes('UNAUTHENTICATED')
+        if (isNonRetriable) {
+          throw callErr
+        }
+
         const isRetriable =
           errMsg.includes('404') ||
           errMsg.includes('503') ||

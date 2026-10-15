@@ -3,16 +3,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Sparkles,
-  Volume2,
-  VolumeX,
   Trash2,
   CheckSquare,
   HelpCircle,
   BookOpen,
   ArrowRight,
   ArrowLeft,
-  Info,
-  ShieldCheck,
   AlertTriangle,
   FileText,
   Loader2,
@@ -40,7 +36,6 @@ export default function ExplanationPage() {
   const isDemo = !documentId || documentId === DEMO_DOCUMENT_ID
   const effectiveDocId = isDemo ? DEMO_DOCUMENT_ID : documentId
 
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [realAnalysis, setRealAnalysis] = useState(null)
   const [isLoading, setIsLoading] = useState(!isDemo)
@@ -61,38 +56,52 @@ export default function ExplanationPage() {
       if (!isDemo) {
         setIsLoading(true)
         setErrorMessage(null)
+
         try {
-          const res = await analysisService.generateExplanation(effectiveDocId, language)
-          if (isCancelled) return
-          if (res) {
-            setRealAnalysis(res)
+          let data = null
+
+          // Step 1: First try to fetch existing summary and terms
+          try {
+            const summaryRes = await analysisService.getAnalysisSummary(effectiveDocId, language)
+            const termsRes = await analysisService.getAnalysisTerms(effectiveDocId, language).catch(() => ({ medicalTerms: [] }))
+            data = {
+              ...summaryRes,
+              medicalTerms: termsRes.medicalTerms || [],
+            }
+          } catch (fetchErr) {
+            const status = fetchErr.response?.status || fetchErr.status
+            const code = fetchErr.response?.data?.code || fetchErr.code
+
+            // Route guard: if rejected or unsupported, redirect to /upload
+            if (status === 422 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
+              navigate('/upload', { replace: true })
+              return
+            }
+
+            // Only if not found (404), trigger explanation generation
+            if (status === 404 || code === 'ANALYSIS_NOT_FOUND') {
+              data = await analysisService.generateExplanation(effectiveDocId, language)
+            } else {
+              throw fetchErr
+            }
+          }
+
+          if (!isCancelled && data) {
+            setRealAnalysis(data)
           }
         } catch (err) {
           if (isCancelled) return
-          console.error('Explanation generation error:', err)
+          console.error('Explanation load error:', err)
 
           const status = err.response?.status || err.status
           const code = err.response?.data?.code || err.code
 
-          // Route guard: if rejected or not found, redirect to /upload
           if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
             navigate('/upload', { replace: true })
             return
           }
 
-          // Try fetching existing summary
-          try {
-            const summaryRes = await analysisService.getAnalysisSummary(effectiveDocId, language)
-            const termsRes = await analysisService.getAnalysisTerms(effectiveDocId, language).catch(() => ({ medicalTerms: [] }))
-            if (isCancelled) return
-            setRealAnalysis({
-              ...summaryRes,
-              medicalTerms: termsRes.medicalTerms || [],
-            })
-          } catch (fetchErr) {
-            if (isCancelled) return
-            setErrorMessage(err.response?.data?.error || err.message || 'Unable to generate explanation.')
-          }
+          setErrorMessage(err.response?.data?.error || err.message || 'Unable to generate explanation.')
         } finally {
           if (!isCancelled) setIsLoading(false)
         }
@@ -223,29 +232,8 @@ export default function ExplanationPage() {
   const uncertainties = Array.isArray(realAnalysis?.uncertainties) ? realAnalysis.uncertainties : []
   const safetyFlags = Array.isArray(realAnalysis?.safetyFlags) ? realAnalysis.safetyFlags.filter(Boolean) : []
 
-  // Web Speech API integration for TTS demo
-  const handleToggleSpeech = () => {
-    if (!('speechSynthesis' in window)) {
-      alert('Text-to-speech is not supported in this browser.')
-      return
-    }
-
-    if (isPlayingAudio) {
-      window.speechSynthesis.cancel()
-      setIsPlayingAudio(false)
-    } else {
-      const textToRead = summaryBullets.join('. ')
-      const utterance = new SpeechSynthesisUtterance(textToRead)
-      utterance.lang = language === 'hi' ? 'hi-IN' : 'en-US'
-      utterance.onend = () => setIsPlayingAudio(false)
-      utterance.onerror = () => setIsPlayingAudio(false)
-      window.speechSynthesis.speak(utterance)
-      setIsPlayingAudio(true)
-    }
-  }
-
   const handleDeleteDocument = async () => {
-    if (isPlayingAudio && 'speechSynthesis' in window) {
+    if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
 

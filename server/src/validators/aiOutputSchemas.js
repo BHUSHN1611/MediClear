@@ -37,9 +37,10 @@ export const UserCorrectionSchema = z.object({
   fields: z.array(
     z.object({
       id: z.string(),
+      key: z.string().optional(),
       value: z.string(),
       unit: z.string().optional(),
-    })
+    }).passthrough()
   ).min(1, 'At least one field update must be provided'),
 })
 

@@ -59,6 +59,26 @@ export async function generateExplanation(req, res, next) {
     }
 
     const { language } = parseResult.data
+    const isForce = req.query.force === 'true'
+
+    if (!isForce) {
+      const existingAnalysis = await dataRepository.findAnalysisByDocument(documentId, language)
+      if (existingAnalysis) {
+        return res.status(200).json({
+          documentId,
+          status: document.status || 'ready',
+          language: existingAnalysis.language,
+          documentType: existingAnalysis.documentType,
+          summary: existingAnalysis.summary || [],
+          extractedFacts: existingAnalysis.extractedFacts || [],
+          medicalTerms: existingAnalysis.medicalTerms || [],
+          uncertainties: existingAnalysis.uncertainties || [],
+          safetyFlags: existingAnalysis.safetyFlags || [],
+          generatedAt: existingAnalysis.generatedAt,
+          cached: true,
+        })
+      }
+    }
 
     // Check extracted data availability
     const extractedData = await dataRepository.findExtractedDataByDocument(documentId)

@@ -264,6 +264,16 @@ export async function generateDocumentChecklist({
           if (response?.text) break
         } catch (callErr) {
           const errMsg = callErr.message || ''
+          const isNonRetriable =
+            errMsg.includes('429') ||
+            errMsg.includes('RESOURCE_EXHAUSTED') ||
+            errMsg.includes('quota') ||
+            errMsg.includes('401') ||
+            errMsg.includes('403') ||
+            errMsg.includes('API_KEY') ||
+            errMsg.includes('UNAUTHENTICATED')
+          if (isNonRetriable) throw callErr
+
           const isRetriable =
             errMsg.includes('404') ||
             errMsg.includes('503') ||
@@ -274,7 +284,7 @@ export async function generateDocumentChecklist({
         }
       }
 
-      const responseText = response.text
+      const responseText = response?.text
       if (responseText) {
         const parsedJson = JSON.parse(responseText)
         // Ensure documentId and language are set
@@ -299,7 +309,30 @@ export async function generateDocumentChecklist({
     })
   }
 
-  // 3. Persist to Database / Memory
+  // 3. Preserve checklist completion state only if the regenerated item ids/titles match; otherwise reset it.
+  const existingChecklist = await dataRepository.findChecklistByDocument(documentId, language)
+  if (existingChecklist?.items?.length) {
+    const completedTitles = new Set(
+      existingChecklist.items
+        .filter((i) => i.isCompleted)
+        .map((i) => i.title.trim().toLowerCase())
+    )
+    const completedIds = new Set(
+      existingChecklist.items
+        .filter((i) => i.isCompleted)
+        .map((i) => i.id)
+    )
+    for (const item of checklistOutput.items) {
+      if (
+        completedIds.has(item.id) ||
+        completedTitles.has(item.title.trim().toLowerCase())
+      ) {
+        item.isCompleted = true
+      }
+    }
+  }
+
+  // 4. Persist to Database / Memory
   const saved = await dataRepository.createOrUpdateChecklist({
     documentId,
     sessionId: sessionId || document.sessionId,

@@ -55,7 +55,7 @@ export const GEMINI_MODEL = getGeminiModel()
 
 export function getCandidateModels() {
   const primary = getGeminiModel()
-  return [primary, 'gemini-flash-lite-latest', 'gemini-3.8-flash', 'gemini-flash-latest']
+  return [primary, 'gemini-flash-lite-latest', 'gemini-flash-latest']
     .filter((v, i, a) => v && a.indexOf(v) === i)
 }
 

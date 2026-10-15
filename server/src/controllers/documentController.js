@@ -137,6 +137,8 @@ export async function getDocumentStatus(req, res, next) {
   }
 }
 
+const inFlightExtractions = new Map()
+
 /**
  * POST /api/v1/documents/:documentId/extract
  * Triggers extraction of document text and structured fields.
@@ -171,79 +173,127 @@ export async function triggerExtraction(req, res, next) {
       })
     }
 
-    // Update status to 'extracting'
-    await dataRepository.updateDocumentStatus(documentId, 'extracting')
+    const isForce = req.query.force === 'true'
+    const existingData = await dataRepository.findExtractedDataByDocument(documentId)
 
-    // Retrieve file buffer from private storage
-    const buffer = await storageService.getFile(document.storedName)
-
-    // Execute extraction via extractionService
-    const extracted = await extractDocumentData({ document, buffer })
-
-    // STRICT REJECTION GATE:
-    // If document is unsupported, unreadable, or isSupportedDocument is false
-    if (
-      extracted.documentType === 'unsupported' ||
-      extracted.isSupportedDocument === false ||
-      extracted.isUnreadable === true
-    ) {
-      const rejectionCode = extracted.isUnreadable
-        ? 'UNREADABLE_DOCUMENT'
-        : 'UNSUPPORTED_DOCUMENT_TYPE'
-      const rejectionReason =
-        extracted.rejectionReason ||
-        (extracted.isUnreadable
-          ? 'Document is unreadable, blurry, or corrupted. Please upload a clear photo or PDF.'
-          : 'This document does not appear to be a recognized lab report, prescription, or discharge instruction.')
-
-      // 1. Mark document status as 'rejected'
-      await dataRepository.updateDocumentStatus(documentId, 'rejected', {
-        rejectionCode,
-        rejectionReason,
-      })
-
-      // 2. Immediately delete physical stored file (privacy requirement)
-      if (document.storedName) {
-        try {
-          await storageService.deleteFile(document.storedName)
-        } catch (delErr) {
-          console.warn(`[Storage Warning] Failed to delete file ${document.storedName}:`, delErr.message)
-        }
-      }
-
-      // 3. Return HTTP 422 immediately (do not save extracted data, do not call downstream services)
-      return res.status(422).json({
-        code: rejectionCode,
-        message:
-          rejectionCode === 'UNREADABLE_DOCUMENT'
-            ? 'The uploaded document is blurry, corrupted, or unreadable. Please upload a clear photo or PDF.'
-            : "This doesn't look like a lab report, prescription, or discharge instruction. MediClear can only explain these document types.",
-        reason: rejectionReason,
+    // BUG 1 Fix: Return existing cached result without re-calling Gemini or overwriting user edits
+    if (!isForce && ['extracted', 'explaining', 'ready'].includes(document.status) && existingData) {
+      return res.status(200).json({
         documentId,
+        status: document.status,
+        documentType: existingData.documentType,
+        fieldsCount: (existingData.fields || []).length,
+        uncertainties: existingData.uncertainties || [],
+        isUnreadable: existingData.isUnreadable || false,
+        cached: true,
       })
     }
 
-    // Save extracted clinical data ONLY for successfully classified documents
-    await dataRepository.createOrUpdateExtractedData({
-      documentId,
-      sessionId: req.sessionId,
-      documentType: extracted.documentType,
-      rawText: extracted.rawText || '',
-      fields: extracted.fields || [],
-      uncertainties: extracted.uncertainties || [],
-      isUnreadable: false,
-    })
+    // BUG 1 Fix: Deduplicate in-flight requests (e.g. React StrictMode or concurrent calls)
+    if (inFlightExtractions.has(documentId)) {
+      const inFlightResult = await inFlightExtractions.get(documentId)
+      if (inFlightResult.isRejection) {
+        return res.status(inFlightResult.status).json(inFlightResult.body)
+      }
+      return res.status(200).json(inFlightResult)
+    }
 
-    await dataRepository.updateDocumentStatus(documentId, 'extracted')
+    const extractionPromise = (async () => {
+      // If forced re-extraction, invalidate downstream data immediately
+      if (isForce) {
+        await dataRepository.invalidateDownstreamData(documentId)
+      }
 
-    return res.status(200).json({
-      documentId,
-      status: 'extracted',
-      documentType: extracted.documentType,
-      fieldsCount: extracted.fields.length,
-      uncertainties: extracted.uncertainties,
-      isUnreadable: false,
-    })
+      // Update status to 'extracting'
+      await dataRepository.updateDocumentStatus(documentId, 'extracting')
+
+      // Retrieve file buffer from private storage
+      const buffer = await storageService.getFile(document.storedName)
+
+      // Execute extraction via extractionService
+      const extracted = await extractDocumentData({ document, buffer })
+
+      // STRICT REJECTION GATE:
+      // If document is unsupported, unreadable, or isSupportedDocument is false
+      if (
+        extracted.documentType === 'unsupported' ||
+        extracted.isSupportedDocument === false ||
+        extracted.isUnreadable === true
+      ) {
+        const rejectionCode = extracted.isUnreadable
+          ? 'UNREADABLE_DOCUMENT'
+          : 'UNSUPPORTED_DOCUMENT_TYPE'
+        const rejectionReason =
+          extracted.rejectionReason ||
+          (extracted.isUnreadable
+            ? 'Document is unreadable, blurry, or corrupted. Please upload a clear photo or PDF.'
+            : 'This document does not appear to be a recognized lab report, prescription, or discharge instruction.')
+
+        // 1. Mark document status as 'rejected'
+        await dataRepository.updateDocumentStatus(documentId, 'rejected', {
+          rejectionCode,
+          rejectionReason,
+        })
+
+        // 2. Immediately delete physical stored file (privacy requirement)
+        if (document.storedName) {
+          try {
+            await storageService.deleteFile(document.storedName)
+          } catch (delErr) {
+            console.warn(`[Storage Warning] Failed to delete file ${document.storedName}:`, delErr.message)
+          }
+        }
+
+        // Return rejection object for callers
+        return {
+          isRejection: true,
+          status: 422,
+          body: {
+            code: rejectionCode,
+            message:
+              rejectionCode === 'UNREADABLE_DOCUMENT'
+                ? 'The uploaded document is blurry, corrupted, or unreadable. Please upload a clear photo or PDF.'
+                : "This doesn't look like a lab report, prescription, or discharge instruction. MediClear can only explain these document types.",
+            reason: rejectionReason,
+            documentId,
+          },
+        }
+      }
+
+      // Save extracted clinical data ONLY for successfully classified documents
+      await dataRepository.createOrUpdateExtractedData({
+        documentId,
+        sessionId: req.sessionId,
+        documentType: extracted.documentType,
+        rawText: extracted.rawText || '',
+        fields: extracted.fields || [],
+        uncertainties: extracted.uncertainties || [],
+        isUnreadable: false,
+      })
+
+      await dataRepository.updateDocumentStatus(documentId, 'extracted')
+
+      return {
+        documentId,
+        status: 'extracted',
+        documentType: extracted.documentType,
+        fieldsCount: extracted.fields.length,
+        uncertainties: extracted.uncertainties,
+        isUnreadable: false,
+      }
+    })()
+
+    inFlightExtractions.set(documentId, extractionPromise)
+
+    try {
+      const result = await extractionPromise
+      if (result.isRejection) {
+        return res.status(result.status).json(result.body)
+      }
+      return res.status(200).json(result)
+    } finally {
+      inFlightExtractions.delete(documentId)
+    }
   } catch (err) {
     next(err)
   }
@@ -357,6 +407,9 @@ export async function updateExtractedData(req, res, next) {
         code: 'RECORD_NOT_FOUND',
       })
     }
+
+    // Invalidate downstream Analysis, Checklist, and DoctorQuestions so they reflect updated values
+    await dataRepository.invalidateDownstreamData(documentId)
 
     return res.status(200).json({
       message: 'Extracted fields updated successfully.',
