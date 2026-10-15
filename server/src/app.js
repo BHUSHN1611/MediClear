@@ -39,6 +39,7 @@ export function createApp() {
     const allowedOrigins = Array.from(
       new Set([
         ...staticOrigins,
+        'https://mediclear-56uy.onrender.com',
         'http://localhost:5173',
         'http://localhost:5174',
       ])
