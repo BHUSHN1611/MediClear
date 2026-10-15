@@ -40,12 +40,13 @@ export default function UploadPage() {
       navigate(`/processing/${response.documentId}`)
     } catch (err) {
       console.error('Backend upload error:', err)
-      const errCode = err.code || err.response?.data?.code
-      const errMsg = err.response?.data?.error || err.message
+      const errCode = err?.code || 'UNKNOWN_ERROR'
+      const errMsg = String(err?.message || '')
+      const status = err?.status
 
-      if (errCode === 'CONSENT_REQUIRED' || err.status === 403) {
+      if (errCode === 'CONSENT_REQUIRED' || status === 403) {
         setUploadError(t('upload.err_consent') || 'Patient consent must be accepted first before uploading medical documents.')
-      } else if (errCode === 'FILE_TOO_LARGE' || err.status === 413) {
+      } else if (errCode === 'FILE_TOO_LARGE' || status === 413) {
         setUploadError(t('upload.err_size') || 'File is too large. Maximum size is 10 MB.')
       } else if (
         errCode === 'INVALID_EXTENSION' ||
@@ -53,8 +54,11 @@ export default function UploadPage() {
         errCode === 'SPOOFED_FILE_TYPE'
       ) {
         setUploadError(t('upload.err_type') || 'Unsupported file type. Please upload a PDF, JPG, JPEG, or PNG.')
-      } else if (!err.response && (err.message?.includes('Network Error') || err.message?.includes('Failed to fetch'))) {
-        setUploadError(t('upload.err_server') || 'Server unreachable. Please check your connection and try again.')
+      } else if (status === undefined || status === 502 || status === 503 || status === 504) {
+        const baseMsg = t('upload.err_server') || 'Server unreachable. Please check your connection and try again.'
+        setUploadError(`${baseMsg} The server may be waking up (Render spin-up); please retry in a minute.`)
+      } else if (errCode === '404' || (status === 404 && errCode === 'UNKNOWN_ERROR')) {
+        setUploadError('Cannot reach the MediClear server. Please try again later.')
       } else {
         setUploadError(errMsg || t('upload.err_generic'))
       }

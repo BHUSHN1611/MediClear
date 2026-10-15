@@ -58,8 +58,8 @@ export default function ChecklistPage() {
         }
       } catch (err) {
         if (isMounted) {
-          const status = err.response?.status || err.status
-          const code = err.response?.data?.code || err.code
+          const status = err?.status
+          const code = err?.code
 
           // Route guard: redirect to /upload if rejected or not found
           if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
@@ -67,7 +67,7 @@ export default function ChecklistPage() {
             return
           }
 
-          setError(err.response?.data?.error || err.message || 'Unable to load checklist for this document.')
+          setError(String(err?.message || 'Unable to load checklist for this document.'))
         }
       } finally {
         if (isMounted) setLoading(false)

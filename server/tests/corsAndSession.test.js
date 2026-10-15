@@ -101,4 +101,68 @@ test('CORS and Session Header Verification for Cross-Site Deployment', async (t)
       assert.equal(res.body.code, 'UNAUTHORIZED_ACCESS')
     }
   })
+
+  await t.test('6. Unit-test api.js error normalization', async () => {
+    const { normalizeApiError } = await import('../../client/src/services/api.js')
+
+    // Case 1: Vercel 404 object body
+    const vercelError = {
+      message: 'Request failed with status code 404',
+      response: {
+        status: 404,
+        data: {
+          error: {
+            code: '404',
+            message: 'The page could not be found',
+          },
+        },
+      },
+    }
+    const vercelNorm = normalizeApiError(vercelError)
+    assert.equal(typeof vercelNorm.message, 'string')
+    assert.equal(vercelNorm.message, 'The page could not be found')
+    assert.equal(vercelNorm.code, '404')
+    assert.equal(vercelNorm.status, 404)
+
+    // Case 2: MediClear { error: 'text', code: 'X' } body
+    const mediClearError = {
+      message: 'Request failed with status code 422',
+      response: {
+        status: 422,
+        data: {
+          error: 'Document rejected due to unsupported type.',
+          code: 'UNSUPPORTED_DOCUMENT_TYPE',
+        },
+      },
+    }
+    const mediClearNorm = normalizeApiError(mediClearError)
+    assert.equal(typeof mediClearNorm.message, 'string')
+    assert.equal(mediClearNorm.message, 'Document rejected due to unsupported type.')
+    assert.equal(mediClearNorm.code, 'UNSUPPORTED_DOCUMENT_TYPE')
+    assert.equal(mediClearNorm.status, 422)
+
+    // Case 3: HTML 502 string body
+    const htmlError = {
+      message: 'Bad Gateway',
+      response: {
+        status: 502,
+        data: '<!DOCTYPE html><html><body><h1>502 Bad Gateway</h1></body></html>',
+      },
+    }
+    const htmlNorm = normalizeApiError(htmlError)
+    assert.equal(typeof htmlNorm.message, 'string')
+    assert.ok(!htmlNorm.message.includes('<html'), 'HTML body must never be included in normalized message')
+    assert.equal(htmlNorm.message, 'Bad Gateway')
+    assert.equal(htmlNorm.status, 502)
+
+    // Case 4: Network error
+    const netError = {
+      message: 'Network Error',
+    }
+    const netNorm = normalizeApiError(netError)
+    assert.equal(typeof netNorm.message, 'string')
+    assert.equal(netNorm.message, 'Network Error')
+    assert.equal(netNorm.code, 'UNKNOWN_ERROR')
+    assert.equal(netNorm.status, undefined)
+  })
 })

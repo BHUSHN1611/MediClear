@@ -93,15 +93,15 @@ export default function ExplanationPage() {
           if (isCancelled) return
           console.error('Explanation load error:', err)
 
-          const status = err.response?.status || err.status
-          const code = err.response?.data?.code || err.code
+          const status = err?.status
+          const code = err?.code
 
           if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
             navigate('/upload', { replace: true })
             return
           }
 
-          setErrorMessage(err.response?.data?.error || err.message || 'Unable to generate explanation.')
+          setErrorMessage(String(err?.message || 'Unable to generate explanation.'))
         } finally {
           if (!isCancelled) setIsLoading(false)
         }
@@ -136,7 +136,7 @@ export default function ExplanationPage() {
         try {
           chkData = await checklistService.getChecklist(effectiveDocId, language)
         } catch (fetchErr) {
-          if (fetchErr.response?.status === 404 || fetchErr.status === 404) {
+          if (fetchErr?.status === 404) {
             chkData = await checklistService.generateChecklist(effectiveDocId, language)
           } else {
             throw fetchErr
@@ -147,13 +147,13 @@ export default function ExplanationPage() {
         }
       } catch (chkErr) {
         if (!isCancelled) {
-          const status = chkErr.response?.status || chkErr.status
-          const code = chkErr.response?.data?.code || chkErr.code
+          const status = chkErr?.status
+          const code = chkErr?.code
           if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
             navigate('/upload', { replace: true })
             return
           }
-          console.warn('Could not load checklist count:', chkErr.message)
+          console.warn('Could not load checklist count:', chkErr?.message)
           setChecklistCount(false)
         }
       }
@@ -164,7 +164,7 @@ export default function ExplanationPage() {
         try {
           qData = await questionService.getQuestions(effectiveDocId, language)
         } catch (fetchErr) {
-          if (fetchErr.response?.status === 404 || fetchErr.status === 404) {
+          if (fetchErr?.status === 404) {
             qData = await questionService.generateQuestions(effectiveDocId, language)
           } else {
             throw fetchErr
@@ -175,13 +175,13 @@ export default function ExplanationPage() {
         }
       } catch (qErr) {
         if (!isCancelled) {
-          const status = qErr.response?.status || qErr.status
-          const code = qErr.response?.data?.code || qErr.code
+          const status = qErr?.status
+          const code = qErr?.code
           if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
             navigate('/upload', { replace: true })
             return
           }
-          console.warn('Could not load questions count:', qErr.message)
+          console.warn('Could not load questions count:', qErr?.message)
           setQuestionsCount(false)
         }
       }

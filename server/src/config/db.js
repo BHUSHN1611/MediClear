@@ -8,15 +8,22 @@ export async function connectDB(uri = config.MONGODB_URI) {
     return mongoose.connection
   }
 
+  const isProd = config.NODE_ENV === 'production'
+  const serverSelectionTimeoutMS = isProd ? 10000 : 2000
+
   try {
     const conn = await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 2000, // Quick timeout for local resilience
+      serverSelectionTimeoutMS,
     })
     isConnected = true
     console.log(`[Database] MongoDB connected: ${conn.connection.host}`)
     return conn.connection
   } catch (err) {
     isConnected = false
+    if (isProd) {
+      console.error(`[Database Error] MongoDB connection failed in production: ${err.message}`)
+      throw err
+    }
     console.warn(`[Database] MongoDB connection notice: ${err.message}. Running in resilient local mode.`)
     return null
   }

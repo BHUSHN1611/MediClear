@@ -60,8 +60,8 @@ export default function ExtractedDataPage() {
           if (isCancelled) return
           console.error('Failed to fetch extracted data:', err)
 
-          const status = err.response?.status || err.status
-          const code = err.response?.data?.code || err.code
+          const status = err?.status
+          const code = err?.code
 
           // Route guard: if rejected or not found, redirect to /upload
           if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
@@ -69,7 +69,7 @@ export default function ExtractedDataPage() {
             return
           }
 
-          setErrorMessage(err.response?.data?.error || err.message || 'Unable to load extracted data.')
+          setErrorMessage(String(err?.message || 'Unable to load extracted data.'))
         } finally {
           if (!isCancelled) setIsLoading(false)
         }

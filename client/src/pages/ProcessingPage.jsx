@@ -41,10 +41,10 @@ export default function ProcessingPage() {
       if (isCancelledRef.current) return
       console.error('Extraction error:', err)
 
-      const status = err.response?.status || err.status
-      const code = err.response?.data?.code || err.code
-      const reason = err.response?.data?.reason || err.reason || ''
-      const serverMsg = err.response?.data?.message || err.message
+      const status = err?.status
+      const code = err?.code
+      const reason = err?.reason || ''
+      const serverMsg = String(err?.message || '')
 
       if (code === 'UNSUPPORTED_DOCUMENT_TYPE' || status === 422 && code !== 'UNREADABLE_DOCUMENT') {
         setErrorInfo({

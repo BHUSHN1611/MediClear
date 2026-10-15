@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { UploadCloud, File, FileText, Image as ImageIcon, X, AlertCircle } from 'lucide-react'
+import { UploadCloud, FileText, Image as ImageIcon, X, AlertCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import Button from '../ui/Button'
 import Alert from '../ui/Alert'
