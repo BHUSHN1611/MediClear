@@ -1,4 +1,4 @@
-import { getGeminiClient, isGeminiConfigured, GEMINI_MODEL } from '../config/gemini.js'
+import { getGeminiClient, isGeminiConfigured, GEMINI_MODEL, getCandidateModels } from '../config/gemini.js'
 import { CHECKLIST_SYSTEM_PROMPT, buildChecklistUserPrompt } from '../prompts/checklistPrompt.js'
 import { dataRepository } from './dataRepository.js'
 import { ChecklistOutputSchema } from '../validators/aiOutputSchemas.js'
@@ -248,15 +248,31 @@ export async function generateDocumentChecklist({
         language,
       })
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: CHECKLIST_SYSTEM_PROMPT,
-          responseMimeType: 'application/json',
-          temperature: 0.2,
-        },
-      })
+      const candidateModels = getCandidateModels()
+      let response = null
+      for (const model of candidateModels) {
+        try {
+          response = await ai.models.generateContent({
+            model,
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            config: {
+              systemInstruction: CHECKLIST_SYSTEM_PROMPT,
+              responseMimeType: 'application/json',
+              temperature: 0.2,
+            },
+          })
+          if (response?.text) break
+        } catch (callErr) {
+          const errMsg = callErr.message || ''
+          const isRetriable =
+            errMsg.includes('404') ||
+            errMsg.includes('503') ||
+            errMsg.includes('NOT_FOUND') ||
+            errMsg.includes('UNAVAILABLE') ||
+            errMsg.includes('no longer available')
+          if (!isRetriable) throw callErr
+        }
+      }
 
       const responseText = response.text
       if (responseText) {

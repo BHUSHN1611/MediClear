@@ -1,4 +1,4 @@
-import { getGeminiClient, isGeminiConfigured, GEMINI_MODEL } from '../config/gemini.js'
+import { getGeminiClient, isGeminiConfigured, GEMINI_MODEL, getCandidateModels } from '../config/gemini.js'
 import { QUESTION_SYSTEM_PROMPT, buildQuestionsUserPrompt } from '../prompts/questionPrompt.js'
 import { dataRepository } from './dataRepository.js'
 import { DoctorQuestionsOutputSchema } from '../validators/aiOutputSchemas.js'
@@ -212,15 +212,31 @@ export async function generateDocumentDoctorQuestions({
         language,
       })
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: QUESTION_SYSTEM_PROMPT,
-          responseMimeType: 'application/json',
-          temperature: 0.2,
-        },
-      })
+      const candidateModels = getCandidateModels()
+      let response = null
+      for (const model of candidateModels) {
+        try {
+          response = await ai.models.generateContent({
+            model,
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            config: {
+              systemInstruction: QUESTION_SYSTEM_PROMPT,
+              responseMimeType: 'application/json',
+              temperature: 0.2,
+            },
+          })
+          if (response?.text) break
+        } catch (callErr) {
+          const errMsg = callErr.message || ''
+          const isRetriable =
+            errMsg.includes('404') ||
+            errMsg.includes('503') ||
+            errMsg.includes('NOT_FOUND') ||
+            errMsg.includes('UNAVAILABLE') ||
+            errMsg.includes('no longer available')
+          if (!isRetriable) throw callErr
+        }
+      }
 
       const responseText = response.text
       if (responseText) {

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { getGeminiClient, isGeminiConfigured, GEMINI_MODEL } from '../config/gemini.js'
+import { getGeminiClient, isGeminiConfigured, GEMINI_MODEL, getCandidateModels } from '../config/gemini.js'
 import { maskPii } from '../utils/maskPii.js'
 import { EXTRACTION_SYSTEM_PROMPT, buildMultimodalExtractionPrompt } from '../prompts/extractionPrompt.js'
 import { ExtractionOutputSchema } from '../validators/aiOutputSchemas.js'
@@ -245,28 +245,53 @@ export async function extractDocumentData({ document, buffer }) {
     const mimeType = document.mimeType || 'application/pdf'
     const base64Data = buffer.toString('base64')
 
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [
-        {
-          role: 'user',
-          parts: [
+    const candidateModels = getCandidateModels()
+    let response = null
+    let lastError = null
+
+    for (const model of candidateModels) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          contents: [
             {
-              inlineData: {
-                mimeType,
-                data: base64Data,
-              },
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType,
+                    data: base64Data,
+                  },
+                },
+                { text: prompt },
+              ],
             },
-            { text: prompt },
           ],
-        },
-      ],
-      config: {
-        systemInstruction: EXTRACTION_SYSTEM_PROMPT,
-        responseMimeType: 'application/json',
-        temperature: 0.1, // Near-zero temperature for strict data extraction fidelity
-      },
-    })
+          config: {
+            systemInstruction: EXTRACTION_SYSTEM_PROMPT,
+            responseMimeType: 'application/json',
+            temperature: 0.1, // Near-zero temperature for strict data extraction fidelity
+          },
+        })
+        if (response?.text) break
+      } catch (callErr) {
+        lastError = callErr
+        const errMsg = callErr.message || ''
+        const isRetriable =
+          errMsg.includes('404') ||
+          errMsg.includes('503') ||
+          errMsg.includes('NOT_FOUND') ||
+          errMsg.includes('UNAVAILABLE') ||
+          errMsg.includes('no longer available')
+        if (!isRetriable) {
+          throw callErr
+        }
+      }
+    }
+
+    if (!response && lastError) {
+      throw lastError
+    }
 
     const rawResponse = response?.text || ''
     if (!rawResponse.trim()) {
