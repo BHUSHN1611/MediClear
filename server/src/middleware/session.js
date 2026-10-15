@@ -3,20 +3,31 @@ import { config } from '../config/env.js'
 
 /**
  * sessionMiddleware:
- * Enforces server-managed anonymous sessions using HTTP-only cookies.
+ * Enforces anonymous session tracking across client requests.
  * 
- * - Checks req.cookies[mc_session].
- * - Checks fallback header 'x-session-id' for automated test runners / API clients.
- * - If absent or invalid UUID, generates a fresh cryptographically secure UUID v4.
- * - Sets HTTP-only, secure, SameSite cookie on response.
- * - Exposes req.sessionId to downstream handlers.
+ * In cross-site production deployments (e.g. client on Vercel and server on Render),
+ * browsers block third-party cookies or SameSite=Lax cookies on cross-origin API calls.
+ * Therefore, we prefer a valid UUID in the 'x-session-id' header over the cookie.
+ * 
+ * Priority:
+ * 1. Valid UUID in 'x-session-id' header (used directly without emitting Set-Cookie)
+ * 2. Valid UUID in mc_session cookie (used directly)
+ * 3. Freshly generated UUID v4, stored in mc_session HTTP-only cookie
+ * 
+ * Exposes req.sessionId to downstream handlers.
  */
 export function sessionMiddleware(req, res, next) {
-  let sessionId = req.cookies?.[config.SESSION_COOKIE_NAME] || req.headers['x-session-id']
+  const headerSessionId = req.headers['x-session-id']
+  const cookieSessionId = req.cookies?.[config.SESSION_COOKIE_NAME]
 
-  if (!sessionId || !validateUuid(sessionId)) {
+  let sessionId = null
+
+  if (headerSessionId && validateUuid(headerSessionId)) {
+    sessionId = headerSessionId
+  } else if (cookieSessionId && validateUuid(cookieSessionId)) {
+    sessionId = cookieSessionId
+  } else {
     sessionId = uuidv4()
-    
     res.cookie(config.SESSION_COOKIE_NAME, sessionId, {
       httpOnly: true,
       secure: config.NODE_ENV === 'production',

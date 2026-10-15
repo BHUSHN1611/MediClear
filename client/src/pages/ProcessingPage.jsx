@@ -74,10 +74,6 @@ export default function ProcessingPage() {
           message: serverMsg || t('processing.extraction_failed_msg'),
         })
       }
-    } finally {
-      if (!isCancelledRef.current) {
-        setIsLoading(false)
-      }
     }
   }, [documentId, navigate, t])
 

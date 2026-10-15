@@ -11,6 +11,11 @@ import apiRoutes from './routes/index.js'
 export function createApp() {
   const app = express()
 
+  // Trust proxy in production (e.g. on Render / behind reverse proxy)
+  if (config.NODE_ENV === 'production') {
+    app.set('trust proxy', 1)
+  }
+
   // 1. Security Headers
   app.use(
     helmet({
@@ -20,12 +25,53 @@ export function createApp() {
   )
 
   // 2. CORS configuration (allowing client origin with credentials for HTTP-only cookies)
+  const corsOriginFn = (origin, callback) => {
+    // Requests with no Origin header are allowed (curl, server-to-server)
+    if (!origin) {
+      return callback(null, true)
+    }
+
+    const staticOrigins = (config.CLIENT_URL || '')
+      .split(',')
+      .map((s) => s.trim().replace(/\/+$/, ''))
+      .filter(Boolean)
+
+    const allowedOrigins = Array.from(
+      new Set([
+        ...staticOrigins,
+        'http://localhost:5173',
+        'http://localhost:5174',
+      ])
+    )
+
+    const cleanOrigin = origin.trim().replace(/\/+$/, '')
+
+    if (allowedOrigins.includes(cleanOrigin)) {
+      return callback(null, true)
+    }
+
+    if (config.CORS_ORIGIN_REGEX) {
+      try {
+        const regex = new RegExp(config.CORS_ORIGIN_REGEX)
+        if (regex.test(cleanOrigin)) {
+          return callback(null, true)
+        }
+      } catch (err) {
+        console.warn('[CORS Warning] Invalid CORS_ORIGIN_REGEX:', err.message)
+      }
+    }
+
+    // Unknown origins get no CORS headers (do not throw)
+    return callback(null, false)
+  }
+
   app.use(
     cors({
-      origin: [config.CLIENT_URL, 'http://localhost:5173', 'http://localhost:5174'],
+      origin: corsOriginFn,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id'],
+      maxAge: 86400,
     })
   )
 

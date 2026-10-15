@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test tests/phase2.test.js tests/phase3.test.js tests/phase4.test.js tests/phase5.test.js tests/strictExtractionGate.test.js tests/dataConsistencyAndCost.test.js"
+    "test": "node --test tests/phase2.test.js tests/phase3.test.js tests/phase4.test.js tests/phase5.test.js tests/strictExtractionGate.test.js tests/dataConsistencyAndCost.test.js tests/corsAndSession.test.js"
   },
   "keywords": [],
   "author": "",
