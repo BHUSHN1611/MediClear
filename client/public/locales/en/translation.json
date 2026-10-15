@@ -137,7 +137,15 @@
     "demo_notice": "Demo mode: Showing synthetic sample data.",
     "loading": "Generating plain-language explanation...",
     "error_title": "Unable to Generate Explanation",
-    "err_rejected": "Cannot generate an explanation for a rejected document."
+    "err_rejected": "Cannot generate an explanation for a rejected document.",
+    "items_count": "{{count}} items",
+    "items_count_one": "{{count}} item",
+    "questions_count": "{{count}} questions",
+    "questions_count_one": "{{count}} question",
+    "checklist_desc": "Actionable tasks and health recommendations derived from this report.",
+    "questions_desc": "Prepared questions to take to your next physician appointment.",
+    "view_checklist": "View Interactive Checklist",
+    "view_questions": "View Doctor Questions"
   },
   "checklist": {
     "title": "Your Checklist",
@@ -190,5 +198,10 @@
     "disclaimer": "Not a medical device. Not a substitute for professional advice.",
     "privacy": "Privacy",
     "settings": "Settings"
+  },
+  "error_boundary": {
+    "title": "Something went wrong",
+    "message": "An unexpected error occurred while displaying this page. Please click retry to reload.",
+    "retry": "Try again"
   }
 }

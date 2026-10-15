@@ -27,6 +27,8 @@ import StepIndicator from '../components/common/StepIndicator'
 import { DEMO_DOCUMENT_ID, DEMO_EXPLANATION_DATA } from '../data/mockData'
 import { documentService } from '../services/documentService'
 import { analysisService } from '../services/analysisService'
+import checklistService from '../services/checklistService'
+import questionService from '../services/questionService'
 import SpeechReader from '../components/voice/SpeechReader'
 
 export default function ExplanationPage() {
@@ -43,6 +45,8 @@ export default function ExplanationPage() {
   const [realAnalysis, setRealAnalysis] = useState(null)
   const [isLoading, setIsLoading] = useState(!isDemo)
   const [errorMessage, setErrorMessage] = useState(null)
+  const [checklistCount, setChecklistCount] = useState(null)
+  const [questionsCount, setQuestionsCount] = useState(null)
 
   // Default demo fallback content (strictly for demo document only)
   const demoContent = isDemo
@@ -102,43 +106,122 @@ export default function ExplanationPage() {
     }
   }, [effectiveDocId, isDemo, language, navigate])
 
+  // Separate effect for fetching action counts (checklist & doctor questions)
+  useEffect(() => {
+    let isCancelled = false
+
+    if (isDemo) {
+      const fallback = language === 'hi' ? DEMO_EXPLANATION_DATA.hi : DEMO_EXPLANATION_DATA.en
+      setChecklistCount(fallback?.checklist?.length ?? 0)
+      setQuestionsCount(fallback?.questions?.length ?? 0)
+      return
+    }
+
+    setChecklistCount(null)
+    setQuestionsCount(null)
+
+    async function loadActionCounts() {
+      // Fetch or generate checklist count
+      try {
+        let chkData
+        try {
+          chkData = await checklistService.getChecklist(effectiveDocId, language)
+        } catch (fetchErr) {
+          if (fetchErr.response?.status === 404 || fetchErr.status === 404) {
+            chkData = await checklistService.generateChecklist(effectiveDocId, language)
+          } else {
+            throw fetchErr
+          }
+        }
+        if (!isCancelled && chkData?.items) {
+          setChecklistCount(chkData.items.length)
+        }
+      } catch (chkErr) {
+        if (!isCancelled) {
+          const status = chkErr.response?.status || chkErr.status
+          const code = chkErr.response?.data?.code || chkErr.code
+          if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
+            navigate('/upload', { replace: true })
+            return
+          }
+          console.warn('Could not load checklist count:', chkErr.message)
+          setChecklistCount(false)
+        }
+      }
+
+      // Fetch or generate questions count
+      try {
+        let qData
+        try {
+          qData = await questionService.getQuestions(effectiveDocId, language)
+        } catch (fetchErr) {
+          if (fetchErr.response?.status === 404 || fetchErr.status === 404) {
+            qData = await questionService.generateQuestions(effectiveDocId, language)
+          } else {
+            throw fetchErr
+          }
+        }
+        if (!isCancelled && qData?.questions) {
+          setQuestionsCount(qData.questions.length)
+        }
+      } catch (qErr) {
+        if (!isCancelled) {
+          const status = qErr.response?.status || qErr.status
+          const code = qErr.response?.data?.code || qErr.code
+          if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
+            navigate('/upload', { replace: true })
+            return
+          }
+          console.warn('Could not load questions count:', qErr.message)
+          setQuestionsCount(false)
+        }
+      }
+    }
+
+    loadActionCounts()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [effectiveDocId, isDemo, language, navigate])
+
   // Active content selection (Demo data strictly behind isDemo check)
   const summaryBullets = isDemo
-    ? (realAnalysis?.summary || [demoContent.summary])
-    : (realAnalysis?.summary || [])
+    ? (Array.isArray(realAnalysis?.summary) ? realAnalysis.summary : (demoContent?.summary ? [demoContent.summary] : []))
+    : (Array.isArray(realAnalysis?.summary) ? realAnalysis.summary : [])
 
   const extractedFacts = isDemo
-    ? (realAnalysis?.extractedFacts?.length > 0
+    ? (Array.isArray(realAnalysis?.extractedFacts) && realAnalysis.extractedFacts.length > 0
         ? realAnalysis.extractedFacts.map((f) => ({
-            title: f.label,
-            description: `${f.value} ${f.unit || ''}`.trim(),
-            source: f.source,
+            title: f?.label || '',
+            description: `${f?.value || ''} ${f?.unit || ''}`.trim(),
+            source: f?.source,
           }))
-        : demoContent.keyFacts)
-    : (realAnalysis?.extractedFacts?.length > 0
+        : (demoContent?.keyFacts || []))
+    : (Array.isArray(realAnalysis?.extractedFacts) && realAnalysis.extractedFacts.length > 0
         ? realAnalysis.extractedFacts.map((f) => ({
-            title: f.label,
-            description: `${f.value} ${f.unit || ''}`.trim(),
-            source: f.source,
+            title: f?.label || '',
+            description: `${f?.value || ''} ${f?.unit || ''}`.trim(),
+            source: f?.source,
           }))
         : [])
 
   const medicalTerms = isDemo
-    ? (realAnalysis?.medicalTerms?.length > 0
+    ? (Array.isArray(realAnalysis?.medicalTerms) && realAnalysis.medicalTerms.length > 0
         ? realAnalysis.medicalTerms.map((m) => ({
-            term: m.term,
-            definition: m.simpleExplanation,
+            term: m?.term || '',
+            definition: m?.simpleExplanation || '',
           }))
-        : demoContent.terms)
-    : (realAnalysis?.medicalTerms?.length > 0
+        : (demoContent?.terms || []))
+    : (Array.isArray(realAnalysis?.medicalTerms) && realAnalysis.medicalTerms.length > 0
         ? realAnalysis.medicalTerms.map((m) => ({
-            term: m.term,
-            definition: m.simpleExplanation,
+            term: m?.term || '',
+            definition: m?.simpleExplanation || '',
           }))
         : [])
 
-  const uncertainties = realAnalysis?.uncertainties || []
-  const safetyFlags = realAnalysis?.safetyFlags || []
+  const uncertainties = Array.isArray(realAnalysis?.uncertainties) ? realAnalysis.uncertainties : []
+  const safetyFlags = Array.isArray(realAnalysis?.safetyFlags) ? realAnalysis.safetyFlags.filter(Boolean) : []
 
   // Web Speech API integration for TTS demo
   const handleToggleSpeech = () => {
@@ -372,12 +455,12 @@ export default function ExplanationPage() {
             These sections from your document were partially obscured, smudged, or uncertain. Always check them with your provider.
           </p>
           <ul className="space-y-2 pt-1">
-            {uncertainties.map((unc, idx) => (
+            {uncertainties.filter(Boolean).map((unc, idx) => (
               <li
                 key={idx}
                 className="text-xs bg-white/90 p-2.5 rounded-lg border border-amber-200 text-surface-700"
               >
-                {typeof unc === 'string' ? unc : unc.reason || unc.field}
+                {typeof unc === 'string' ? unc : (unc?.reason || unc?.field || '')}
               </li>
             ))}
           </ul>
@@ -392,19 +475,23 @@ export default function ExplanationPage() {
             <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
               <CheckSquare className="h-5 w-5" />
             </div>
-            <Badge variant="yellow">{demoContent.checklist.length} items</Badge>
+            {typeof checklistCount === 'number' && (
+              <Badge variant="yellow">
+                {t('explanation.items_count', { count: checklistCount })}
+              </Badge>
+            )}
           </div>
           <div>
             <h3 className="font-bold text-base text-surface-900">
               {t('explanation.checklist_heading')}
             </h3>
             <p className="text-xs text-surface-500 mt-1">
-              Actionable tasks and health recommendations derived from this report.
+              {t('explanation.checklist_desc')}
             </p>
           </div>
-          <Link to={`/checklist/${documentId}`} className="block pt-2">
+          <Link to={`/checklist/${effectiveDocId}`} className="block pt-2">
             <Button variant="secondary" size="sm" className="w-full">
-              <span>View Interactive Checklist</span>
+              <span>{t('explanation.view_checklist')}</span>
               <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
           </Link>
@@ -416,19 +503,23 @@ export default function ExplanationPage() {
             <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <HelpCircle className="h-5 w-5" />
             </div>
-            <Badge variant="teal">{demoContent.questions.length} questions</Badge>
+            {typeof questionsCount === 'number' && (
+              <Badge variant="teal">
+                {t('explanation.questions_count', { count: questionsCount })}
+              </Badge>
+            )}
           </div>
           <div>
             <h3 className="font-bold text-base text-surface-900">
               {t('explanation.questions_heading')}
             </h3>
             <p className="text-xs text-surface-500 mt-1">
-              Prepared questions to take to your next physician appointment.
+              {t('explanation.questions_desc')}
             </p>
           </div>
-          <Link to={`/questions/${documentId}`} className="block pt-2">
+          <Link to={`/questions/${effectiveDocId}`} className="block pt-2">
             <Button variant="secondary" size="sm" className="w-full">
-              <span>View Doctor Questions</span>
+              <span>{t('explanation.view_questions')}</span>
               <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
           </Link>

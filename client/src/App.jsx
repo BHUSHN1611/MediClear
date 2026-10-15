@@ -11,6 +11,7 @@ import ChecklistPage from './pages/ChecklistPage'
 import DoctorQuestionsPage from './pages/DoctorQuestionsPage'
 import SettingsPage from './pages/SettingsPage'
 import NotFoundPage from './pages/NotFoundPage'
+import ErrorBoundary from './components/common/ErrorBoundary'
 
 export default function App() {
   return (
@@ -21,9 +22,30 @@ export default function App() {
         <Route path="/upload" element={<UploadPage />} />
         <Route path="/processing/:documentId" element={<ProcessingPage />} />
         <Route path="/extracted/:documentId" element={<ExtractedDataPage />} />
-        <Route path="/explanation/:documentId" element={<ExplanationPage />} />
-        <Route path="/checklist/:documentId" element={<ChecklistPage />} />
-        <Route path="/questions/:documentId" element={<DoctorQuestionsPage />} />
+        <Route
+          path="/explanation/:documentId"
+          element={
+            <ErrorBoundary>
+              <ExplanationPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/checklist/:documentId"
+          element={
+            <ErrorBoundary>
+              <ChecklistPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/questions/:documentId"
+          element={
+            <ErrorBoundary>
+              <DoctorQuestionsPage />
+            </ErrorBoundary>
+          }
+        />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
