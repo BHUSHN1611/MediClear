@@ -38,6 +38,15 @@ export async function generateChecklist(req, res, next) {
       })
     }
 
+    // Guard: Rejected documents refuse generation
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot generate checklist for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
+        reason: document.rejectionReason,
+      })
+    }
+
     // Validate request body
     const parseResult = GenerationRequestSchema.safeParse(req.body)
     if (!parseResult.success) {
@@ -102,6 +111,13 @@ export async function getChecklist(req, res, next) {
       })
     }
 
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot fetch checklist for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
+      })
+    }
+
     const language = req.query.language || 'en'
     const checklist = await dataRepository.findChecklistByDocument(documentId, language)
 
@@ -145,6 +161,13 @@ export async function toggleChecklistItem(req, res, next) {
       return res.status(403).json({
         error: 'Access denied.',
         code: 'UNAUTHORIZED_ACCESS',
+      })
+    }
+
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot update checklist for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
       })
     }
 

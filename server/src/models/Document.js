@@ -35,9 +35,18 @@ const documentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['uploaded', 'extracting', 'extracted', 'explaining', 'ready', 'error'],
+      enum: ['uploaded', 'extracting', 'extracted', 'explaining', 'ready', 'rejected', 'error'],
       default: 'uploaded',
       index: true,
+    },
+    rejectionCode: {
+      type: String,
+      enum: ['UNSUPPORTED_DOCUMENT_TYPE', 'UNREADABLE_DOCUMENT', null],
+      default: null,
+    },
+    rejectionReason: {
+      type: String,
+      default: null,
     },
     errorMessage: {
       type: String,

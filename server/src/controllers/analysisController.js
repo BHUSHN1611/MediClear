@@ -39,6 +39,15 @@ export async function generateExplanation(req, res, next) {
       })
     }
 
+    // Guard: Rejection gate
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot generate explanation for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
+        reason: document.rejectionReason,
+      })
+    }
+
     // Parse request body
     const parseResult = ExplanationRequestSchema.safeParse(req.body)
     if (!parseResult.success) {
@@ -127,6 +136,13 @@ export async function getAnalysisSummary(req, res, next) {
       })
     }
 
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot fetch analysis for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
+      })
+    }
+
     const language = req.query.language || 'en'
     const analysis = await dataRepository.findAnalysisByDocument(documentId, language)
 
@@ -173,6 +189,13 @@ export async function getAnalysisTerms(req, res, next) {
       return res.status(403).json({
         error: 'Access denied.',
         code: 'UNAUTHORIZED_ACCESS',
+      })
+    }
+
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot fetch terms for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
       })
     }
 

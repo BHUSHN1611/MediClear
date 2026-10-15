@@ -23,14 +23,8 @@ export default function UploadPage() {
   const [uploadError, setUploadError] = useState(null)
 
   const handleUseSample = () => {
-    // Valid minimal PDF header with magic bytes %PDF-1.4
-    const validPdfBytes = '%PDF-1.4\n%âãÏÓ\n1 0 obj\n<< /Title (Synthetic Lab Report) >>\nendobj\ntrailer\n<<>>\n%%EOF'
-    const mockFile = new File([validPdfBytes], 'Sample_Lipid_Panel_Report.pdf', {
-      type: 'application/pdf',
-      lastModified: Date.now(),
-    })
-    setSelectedFile(mockFile)
-    setUploadError(null)
+    // Explicit demo navigation only
+    navigate(`/extracted/${DEMO_DOCUMENT_ID}`)
   }
 
   const handleStartExtraction = async () => {
@@ -40,16 +34,29 @@ export default function UploadPage() {
 
     try {
       const response = await documentService.uploadDocument(selectedFile)
-      const docId = response?.documentId || DEMO_DOCUMENT_ID
-      navigate(`/processing/${docId}`)
+      if (!response?.documentId) {
+        throw new Error('Server returned invalid document response.')
+      }
+      navigate(`/processing/${response.documentId}`)
     } catch (err) {
-      console.warn('Backend upload notice:', err.message)
-      // If error is consent-related, prompt user
-      if (err.code === 'CONSENT_REQUIRED') {
-        setUploadError('Patient consent must be accepted first before uploading.')
+      console.error('Backend upload error:', err)
+      const errCode = err.code || err.response?.data?.code
+      const errMsg = err.response?.data?.error || err.message
+
+      if (errCode === 'CONSENT_REQUIRED' || err.status === 403) {
+        setUploadError(t('upload.err_consent') || 'Patient consent must be accepted first before uploading medical documents.')
+      } else if (errCode === 'FILE_TOO_LARGE' || err.status === 413) {
+        setUploadError(t('upload.err_size') || 'File is too large. Maximum size is 10 MB.')
+      } else if (
+        errCode === 'INVALID_EXTENSION' ||
+        errCode === 'INVALID_MIME_TYPE' ||
+        errCode === 'SPOOFED_FILE_TYPE'
+      ) {
+        setUploadError(t('upload.err_type') || 'Unsupported file type. Please upload a PDF, JPG, JPEG, or PNG.')
+      } else if (!err.response && (err.message?.includes('Network Error') || err.message?.includes('Failed to fetch'))) {
+        setUploadError(t('upload.err_server') || 'Server unreachable. Please check your connection and try again.')
       } else {
-        // Fallback for resilient preview
-        navigate(`/processing/${DEMO_DOCUMENT_ID}`)
+        setUploadError(errMsg || t('upload.err_generic'))
       }
     } finally {
       setIsSubmitting(false)
@@ -65,7 +72,7 @@ export default function UploadPage() {
           {t('upload.title')}
         </h1>
         <p className="text-sm text-surface-500">
-          {t('upload.subtitle')}
+          {t('upload.helper_text') || 'Supported: Lab reports, Prescriptions, Discharge instructions. PDF, JPG, PNG.'}
         </p>
       </div>
 
@@ -82,19 +89,10 @@ export default function UploadPage() {
       )}
 
       {uploadError && (
-        <Alert variant="danger" title="Upload Blocked">
+        <Alert variant="danger" title="Upload Failed">
           <p className="text-xs sm:text-sm">{uploadError}</p>
         </Alert>
       )}
-
-      {/* Demo mode banner */}
-      <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-primary-50/70 border border-primary-200/50 text-primary-800 text-xs leading-relaxed">
-        <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary-600" />
-        <span>
-          <strong>Phase 1 Preview Mode:</strong> File selection, validation, and layout are active.
-          Document processing connects to synthetic clinical records until backend services are initialized in Phase 2.
-        </span>
-      </div>
 
       <Card className="p-6 space-y-6">
         <UploadZone

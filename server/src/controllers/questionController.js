@@ -35,6 +35,15 @@ export async function generateQuestions(req, res, next) {
       })
     }
 
+    // Guard: Rejected documents refuse question generation
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot generate doctor questions for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
+        reason: document.rejectionReason,
+      })
+    }
+
     const parseResult = GenerationRequestSchema.safeParse(req.body)
     if (!parseResult.success) {
       return res.status(400).json({
@@ -94,6 +103,13 @@ export async function getQuestions(req, res, next) {
       return res.status(403).json({
         error: 'Access denied.',
         code: 'UNAUTHORIZED_ACCESS',
+      })
+    }
+
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot fetch doctor questions for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
       })
     }
 

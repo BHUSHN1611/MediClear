@@ -9,10 +9,13 @@ import {
   generateDocumentExplanation,
 } from '../src/services/explanationService.js'
 import { ExplanationOutputSchema } from '../src/validators/aiOutputSchemas.js'
+import { setMockGeminiClient } from '../src/config/gemini.js'
+import { createMockGeminiClient } from './mockGemini.js'
 
 test('Phase 4 — AI Explanations, Medical Glossary, Safety Guardrails', async (t) => {
   const app = createApp()
   dataRepository.clearMemory()
+  setMockGeminiClient(createMockGeminiClient())
 
   let sessionCookie = null
   let labDocId = null

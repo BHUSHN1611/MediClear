@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { HelpCircle, ArrowLeft, Copy, Check, MessageSquare, RefreshCw, FileText, Lightbulb } from 'lucide-react'
 import { useLanguage } from '../context/LanguageContext'
@@ -15,7 +15,11 @@ import { DEMO_DOCUMENT_ID, DEMO_EXPLANATION_DATA } from '../data/mockData'
 export default function DoctorQuestionsPage() {
   const { t } = useTranslation()
   const { language } = useLanguage()
-  const { documentId = DEMO_DOCUMENT_ID } = useParams()
+  const { documentId } = useParams()
+  const navigate = useNavigate()
+
+  const isDemo = !documentId || documentId === DEMO_DOCUMENT_ID
+  const effectiveDocId = isDemo ? DEMO_DOCUMENT_ID : documentId
 
   const [questions, setQuestions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -29,29 +33,41 @@ export default function DoctorQuestionsPage() {
     async function loadQuestions() {
       setLoading(true)
       setError(null)
+
+      if (isDemo) {
+        const fallback = language === 'hi' ? DEMO_EXPLANATION_DATA.hi : DEMO_EXPLANATION_DATA.en
+        setQuestions(fallback.questions || [])
+        setLoading(false)
+        return
+      }
+
       try {
         let data
         try {
-          data = await questionService.getQuestions(documentId, language)
+          data = await questionService.getQuestions(effectiveDocId, language)
         } catch (fetchErr) {
           if (fetchErr.response?.status === 404) {
-            data = await questionService.generateQuestions(documentId, language)
+            data = await questionService.generateQuestions(effectiveDocId, language)
           } else {
             throw fetchErr
           }
         }
 
         if (isMounted) {
-          setQuestions(data.questions || [])
+          setQuestions(data?.questions || [])
         }
       } catch (err) {
         if (isMounted) {
-          if (documentId === DEMO_DOCUMENT_ID) {
-            const fallback = language === 'hi' ? DEMO_EXPLANATION_DATA.hi : DEMO_EXPLANATION_DATA.en
-            setQuestions(fallback.questions || [])
-          } else {
-            setError(err.response?.data?.error || 'Unable to load consultation questions.')
+          const status = err.response?.status || err.status
+          const code = err.response?.data?.code || err.code
+
+          // Route guard: redirect to /upload if rejected or not found
+          if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
+            navigate('/upload', { replace: true })
+            return
           }
+
+          setError(err.response?.data?.error || err.message || 'Unable to load consultation questions.')
         }
       } finally {
         if (isMounted) setLoading(false)
@@ -63,7 +79,7 @@ export default function DoctorQuestionsPage() {
     return () => {
       isMounted = false
     }
-  }, [documentId, language])
+  }, [effectiveDocId, isDemo, language, navigate])
 
   const handleCopyAll = () => {
     const textToCopy = questions
@@ -91,7 +107,7 @@ export default function DoctorQuestionsPage() {
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Back button and speech reader */}
       <div className="flex items-center justify-between">
-        <Link to={`/explanation/${documentId}`}>
+        <Link to={`/explanation/${effectiveDocId}`}>
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4 mr-1.5" />
             <span>{t('common.back')} to Explanation</span>

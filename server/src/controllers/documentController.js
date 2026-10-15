@@ -128,7 +128,9 @@ export async function getDocumentStatus(req, res, next) {
     return res.status(200).json({
       documentId: document._id || document.id,
       status: document.status,
-      errorMessage: document.errorMessage,
+      rejectionCode: document.rejectionCode || null,
+      rejectionReason: document.rejectionReason || null,
+      errorMessage: document.errorMessage || null,
     })
   } catch (err) {
     next(err)
@@ -159,6 +161,16 @@ export async function triggerExtraction(req, res, next) {
       })
     }
 
+    // Guard: Do not re-process already rejected documents
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        code: document.rejectionCode || 'UNSUPPORTED_DOCUMENT_TYPE',
+        message: 'This document was previously rejected.',
+        reason: document.rejectionReason || 'Document is not a supported type.',
+        documentId,
+      })
+    }
+
     // Update status to 'extracting'
     await dataRepository.updateDocumentStatus(documentId, 'extracting')
 
@@ -168,31 +180,69 @@ export async function triggerExtraction(req, res, next) {
     // Execute extraction via extractionService
     const extracted = await extractDocumentData({ document, buffer })
 
-    // Save extracted clinical data
+    // STRICT REJECTION GATE:
+    // If document is unsupported, unreadable, or isSupportedDocument is false
+    if (
+      extracted.documentType === 'unsupported' ||
+      extracted.isSupportedDocument === false ||
+      extracted.isUnreadable === true
+    ) {
+      const rejectionCode = extracted.isUnreadable
+        ? 'UNREADABLE_DOCUMENT'
+        : 'UNSUPPORTED_DOCUMENT_TYPE'
+      const rejectionReason =
+        extracted.rejectionReason ||
+        (extracted.isUnreadable
+          ? 'Document is unreadable, blurry, or corrupted. Please upload a clear photo or PDF.'
+          : 'This document does not appear to be a recognized lab report, prescription, or discharge instruction.')
+
+      // 1. Mark document status as 'rejected'
+      await dataRepository.updateDocumentStatus(documentId, 'rejected', {
+        rejectionCode,
+        rejectionReason,
+      })
+
+      // 2. Immediately delete physical stored file (privacy requirement)
+      if (document.storedName) {
+        try {
+          await storageService.deleteFile(document.storedName)
+        } catch (delErr) {
+          console.warn(`[Storage Warning] Failed to delete file ${document.storedName}:`, delErr.message)
+        }
+      }
+
+      // 3. Return HTTP 422 immediately (do not save extracted data, do not call downstream services)
+      return res.status(422).json({
+        code: rejectionCode,
+        message:
+          rejectionCode === 'UNREADABLE_DOCUMENT'
+            ? 'The uploaded document is blurry, corrupted, or unreadable. Please upload a clear photo or PDF.'
+            : "This doesn't look like a lab report, prescription, or discharge instruction. MediClear can only explain these document types.",
+        reason: rejectionReason,
+        documentId,
+      })
+    }
+
+    // Save extracted clinical data ONLY for successfully classified documents
     await dataRepository.createOrUpdateExtractedData({
       documentId,
       sessionId: req.sessionId,
       documentType: extracted.documentType,
-      rawText: extracted.rawText,
-      fields: extracted.fields,
-      uncertainties: extracted.uncertainties,
-      isUnreadable: extracted.isUnreadable,
+      rawText: extracted.rawText || '',
+      fields: extracted.fields || [],
+      uncertainties: extracted.uncertainties || [],
+      isUnreadable: false,
     })
 
-    const newStatus = extracted.isUnreadable ? 'error' : 'extracted'
-    const errorMsg = extracted.isUnreadable
-      ? 'Document was unreadable or corrupted. Please upload a clear photo or PDF.'
-      : null
-
-    await dataRepository.updateDocumentStatus(documentId, newStatus, errorMsg)
+    await dataRepository.updateDocumentStatus(documentId, 'extracted')
 
     return res.status(200).json({
       documentId,
-      status: newStatus,
+      status: 'extracted',
       documentType: extracted.documentType,
       fieldsCount: extracted.fields.length,
       uncertainties: extracted.uncertainties,
-      isUnreadable: extracted.isUnreadable,
+      isUnreadable: false,
     })
   } catch (err) {
     next(err)
@@ -220,6 +270,15 @@ export async function getExtractedData(req, res, next) {
       return res.status(403).json({
         error: 'Access denied.',
         code: 'UNAUTHORIZED_ACCESS',
+      })
+    }
+
+    // Guard: Rejected documents refuse access
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'This document was rejected as unsupported or unreadable.',
+        code: document.rejectionCode || 'UNSUPPORTED_DOCUMENT_TYPE',
+        reason: document.rejectionReason,
       })
     }
 
@@ -266,6 +325,14 @@ export async function updateExtractedData(req, res, next) {
       return res.status(403).json({
         error: 'Access denied.',
         code: 'UNAUTHORIZED_ACCESS',
+      })
+    }
+
+    // Guard: Rejected documents refuse updates
+    if (document.status === 'rejected') {
+      return res.status(422).json({
+        error: 'Cannot update extracted data for a rejected document.',
+        code: 'DOCUMENT_REJECTED',
       })
     }
 

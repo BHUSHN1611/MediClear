@@ -69,6 +69,8 @@
   "upload": {
     "title": "Upload Your Document",
     "subtitle": "Supported formats: PDF, JPG, JPEG, PNG · Max 10 MB",
+    "helper_text": "Supported: Lab reports, Prescriptions, Discharge instructions. PDF, JPG, PNG.",
+    "try_demo": "Try a demo (sample data, not your document)",
     "drag_here": "Drag your file here",
     "or_browse": "or click to browse",
     "selected": "Selected file",
@@ -77,6 +79,8 @@
     "uploading": "Uploading…",
     "err_type": "Unsupported file type. Please upload a PDF, JPG, JPEG, or PNG.",
     "err_size": "File is too large. Maximum size is 10 MB.",
+    "err_consent": "Patient consent must be accepted first before uploading medical documents.",
+    "err_server": "Server unreachable. Please check your connection and try again.",
     "err_generic": "Upload failed. Please try again.",
     "note": "Note: Do not upload documents containing sensitive personal information belonging to others. For development testing, use synthetic or sample documents only."
   },
@@ -87,7 +91,17 @@
     "almost_done": "Almost done…",
     "error_title": "Processing failed",
     "error_body": "We could not process your document. This may be due to a corrupted file, unsupported content, or a temporary error.",
-    "retry": "Try a different file"
+    "retry": "Try a different file",
+    "unsupported_title": "Document Type Not Supported",
+    "unsupported_msg": "This doesn't look like a lab report, prescription, or discharge instruction. MediClear can only explain these document types.",
+    "unreadable_title": "Unreadable Document",
+    "unreadable_msg": "The document is too blurry, dark, or corrupted. Please upload a clearer photo or PDF.",
+    "not_configured_title": "AI Service Not Configured",
+    "not_configured_msg": "The extraction service requires an active Gemini API key. Please configure GEMINI_API_KEY on the server.",
+    "extraction_failed_title": "Extraction Failed",
+    "extraction_failed_msg": "We were unable to extract clinical information from this document. Please try again.",
+    "btn_upload_diff": "Upload a different document",
+    "btn_retry": "Retry Extraction"
   },
   "extracted": {
     "title": "Review Extracted Information",
@@ -101,7 +115,11 @@
     "uncertainty_note": "These items could not be extracted reliably. Please verify them in the original document.",
     "confirm_btn": "Confirm & Generate Explanation",
     "edit_hint": "Click any value to correct it.",
-    "demo_notice": "Demo mode: Showing synthetic sample data. Document upload and extraction will be available in a future phase."
+    "demo_notice": "Demo mode: Showing synthetic sample data.",
+    "empty_title": "No Clinical Fields Extracted",
+    "empty_msg": "No parameters could be extracted from this document. You can upload a clearer photo or try another document.",
+    "loading": "Loading extracted clinical data...",
+    "err_rejected": "This document was rejected as unsupported or unreadable."
   },
   "explanation": {
     "title": "Your Document Explained",
@@ -116,21 +134,28 @@
     "stop_btn": "Stop",
     "delete_doc": "Delete this document",
     "delete_confirm": "Are you sure? This will permanently delete the document and all generated content.",
-    "demo_notice": "Demo mode: Showing synthetic sample data."
+    "demo_notice": "Demo mode: Showing synthetic sample data.",
+    "loading": "Generating plain-language explanation...",
+    "error_title": "Unable to Generate Explanation",
+    "err_rejected": "Cannot generate an explanation for a rejected document."
   },
   "checklist": {
     "title": "Your Checklist",
     "subtitle": "Based on the instructions in your document.",
     "empty": "No checklist items were generated from this document.",
-    "demo_notice": "Demo mode: Synthetic checklist items shown."
+    "demo_notice": "Demo mode: Synthetic checklist items shown.",
+    "loading": "Generating checklist items...",
+    "err_rejected": "Cannot generate a checklist for a rejected document."
   },
   "questions": {
     "title": "Questions for Your Doctor",
     "subtitle": "Take these questions to your next appointment.",
     "empty": "No questions were generated from this document.",
+    "demo_notice": "Demo mode: Synthetic consultation questions shown.",
+    "loading": "Generating consultation questions...",
+    "err_rejected": "Cannot generate questions for a rejected document.",
     "copy_all": "Copy all questions",
-    "copied": "Copied!",
-    "demo_notice": "Demo mode: Synthetic questions shown."
+    "copied": "Copied!"
   },
   "settings": {
     "title": "Settings & Privacy",

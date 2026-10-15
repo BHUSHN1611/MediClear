@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { CheckSquare, ArrowLeft, Check, Sparkles, AlertCircle, RefreshCw, FileText, Lightbulb } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -16,7 +16,11 @@ import { DEMO_DOCUMENT_ID, DEMO_EXPLANATION_DATA } from '../data/mockData'
 export default function ChecklistPage() {
   const { t } = useTranslation()
   const { language } = useLanguage()
-  const { documentId = DEMO_DOCUMENT_ID } = useParams()
+  const { documentId } = useParams()
+  const navigate = useNavigate()
+
+  const isDemo = !documentId || documentId === DEMO_DOCUMENT_ID
+  const effectiveDocId = isDemo ? DEMO_DOCUMENT_ID : documentId
 
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -29,30 +33,41 @@ export default function ChecklistPage() {
     async function loadChecklist() {
       setLoading(true)
       setError(null)
+
+      if (isDemo) {
+        const fallback = language === 'hi' ? DEMO_EXPLANATION_DATA.hi : DEMO_EXPLANATION_DATA.en
+        setItems(fallback.checklist || [])
+        setLoading(false)
+        return
+      }
+
       try {
         let data
         try {
-          data = await checklistService.getChecklist(documentId, language)
+          data = await checklistService.getChecklist(effectiveDocId, language)
         } catch (fetchErr) {
           if (fetchErr.response?.status === 404) {
-            data = await checklistService.generateChecklist(documentId, language)
+            data = await checklistService.generateChecklist(effectiveDocId, language)
           } else {
             throw fetchErr
           }
         }
 
         if (isMounted) {
-          setItems(data.items || [])
+          setItems(data?.items || [])
         }
       } catch (err) {
         if (isMounted) {
-          // If in demo mode or offline, fallback to mock data
-          if (documentId === DEMO_DOCUMENT_ID) {
-            const fallback = language === 'hi' ? DEMO_EXPLANATION_DATA.hi : DEMO_EXPLANATION_DATA.en
-            setItems(fallback.checklist || [])
-          } else {
-            setError(err.response?.data?.error || 'Unable to load checklist for this document.')
+          const status = err.response?.status || err.status
+          const code = err.response?.data?.code || err.code
+
+          // Route guard: redirect to /upload if rejected or not found
+          if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
+            navigate('/upload', { replace: true })
+            return
           }
+
+          setError(err.response?.data?.error || err.message || 'Unable to load checklist for this document.')
         }
       } finally {
         if (isMounted) setLoading(false)
@@ -64,7 +79,7 @@ export default function ChecklistPage() {
     return () => {
       isMounted = false
     }
-  }, [documentId, language])
+  }, [effectiveDocId, isDemo, language, navigate])
 
   const toggleItem = async (id, currentStatus) => {
     // Optimistic UI update
@@ -72,10 +87,10 @@ export default function ChecklistPage() {
       prev.map((i) => (i.id === id ? { ...i, isCompleted: !currentStatus } : i))
     )
 
-    if (documentId !== DEMO_DOCUMENT_ID) {
+    if (!isDemo) {
       setTogglingId(id)
       try {
-        await checklistService.toggleItem(documentId, id, !currentStatus)
+        await checklistService.toggleItem(effectiveDocId, id, !currentStatus)
       } catch (err) {
         // Revert on error
         setItems((prev) =>
@@ -100,7 +115,7 @@ export default function ChecklistPage() {
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Top action row */}
       <div className="flex items-center justify-between">
-        <Link to={`/explanation/${documentId}`}>
+        <Link to={`/explanation/${effectiveDocId}`}>
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4 mr-1.5" />
             <span>{t('common.back')} to Explanation</span>

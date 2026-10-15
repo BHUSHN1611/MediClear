@@ -113,11 +113,23 @@ export const dataRepository = {
     return memoryDocuments.get(documentId) || null
   },
 
-  async updateDocumentStatus(documentId, status, errorMessage = null) {
+  async updateDocumentStatus(documentId, status, extra = null) {
+    let errorMessage = null
+    let rejectionCode = null
+    let rejectionReason = null
+
+    if (typeof extra === 'string') {
+      errorMessage = extra
+    } else if (extra && typeof extra === 'object') {
+      errorMessage = extra.errorMessage || null
+      rejectionCode = extra.rejectionCode || null
+      rejectionReason = extra.rejectionReason || null
+    }
+
     if (isDbConnected()) {
       const doc = await DocumentModel.findByIdAndUpdate(
         documentId,
-        { status, errorMessage, updatedAt: new Date() },
+        { status, errorMessage, rejectionCode, rejectionReason, updatedAt: new Date() },
         { new: true }
       )
       return doc ? (doc.toObject ? doc.toObject() : doc) : null
@@ -127,6 +139,8 @@ export const dataRepository = {
     if (doc) {
       doc.status = status
       doc.errorMessage = errorMessage
+      doc.rejectionCode = rejectionCode
+      doc.rejectionReason = rejectionReason
       doc.updatedAt = new Date()
       return doc
     }

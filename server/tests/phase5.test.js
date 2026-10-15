@@ -13,10 +13,13 @@ import {
   ChecklistOutputSchema,
   DoctorQuestionsOutputSchema,
 } from '../src/validators/aiOutputSchemas.js'
+import { setMockGeminiClient } from '../src/config/gemini.js'
+import { createMockGeminiClient } from './mockGemini.js'
 
 test('Phase 5 — Actionable Checklist and Doctor Questions', async (t) => {
   const app = createApp()
   dataRepository.clearMemory()
+  setMockGeminiClient(createMockGeminiClient())
 
   let sessionCookie = null
   let labDocId = null

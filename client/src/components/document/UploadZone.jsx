@@ -27,12 +27,12 @@ export default function UploadZone({
 
     if (!file) return
 
-    // Extension check fallback
+    // Strict extension and mime validation
     const ext = '.' + file.name.split('.').pop().toLowerCase()
     const isExtensionValid = ALLOWED_EXTENSIONS.includes(ext)
-    const isMimeValid = ALLOWED_MIME_TYPES.includes(file.type)
+    const isMimeValid = !file.type || ALLOWED_MIME_TYPES.includes(file.type)
 
-    if (!isExtensionValid && !isMimeValid) {
+    if (!isExtensionValid || !isMimeValid) {
       setErrorMessage(t('upload.err_type'))
       return
     }
@@ -147,8 +147,8 @@ export default function UploadZone({
             {t('upload.or_browse')}
           </p>
 
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-100 text-surface-600 text-xs font-medium">
-            <span>{t('upload.subtitle')}</span>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-100 text-surface-700 text-xs font-medium">
+            <span>{t('upload.helper_text') || 'Supported: Lab reports, Prescriptions, Discharge instructions. PDF, JPG, PNG.'}</span>
           </div>
 
           {onUseSample && (
@@ -159,9 +159,9 @@ export default function UploadZone({
                   e.stopPropagation()
                   onUseSample()
                 }}
-                className="text-xs font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                className="text-xs font-semibold text-primary-600 hover:text-primary-700 hover:underline"
               >
-                + Or try with sample lab report
+                + {t('upload.try_demo') || 'Try a demo (sample data, not your document)'}
               </button>
             </div>
           )}

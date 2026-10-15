@@ -21,8 +21,10 @@ export const ExtractedFieldSchema = z.object({
  * Validates the structured payload returned by the extraction engine.
  */
 export const ExtractionOutputSchema = z.object({
-  documentType: z.enum(['lab_report', 'prescription', 'discharge_instructions', 'unknown']),
-  fields: z.array(ExtractedFieldSchema),
+  documentType: z.enum(['lab_report', 'prescription', 'discharge_instructions', 'unsupported', 'unknown']),
+  isSupportedDocument: z.boolean().default(true),
+  rejectionReason: z.string().optional().default(''),
+  fields: z.array(ExtractedFieldSchema).default([]),
   uncertainties: z.array(z.string()).default([]),
   rawText: z.string().default(''),
   isUnreadable: z.boolean().default(false),

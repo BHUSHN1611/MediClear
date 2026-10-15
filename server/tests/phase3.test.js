@@ -5,10 +5,13 @@ import { createApp } from '../src/app.js'
 import { dataRepository } from '../src/services/dataRepository.js'
 import { maskPii } from '../src/utils/maskPii.js'
 import { ExtractionOutputSchema, UserCorrectionSchema } from '../src/validators/aiOutputSchemas.js'
+import { setMockGeminiClient, resetMockGeminiClient } from '../src/config/gemini.js'
+import { createMockGeminiClient } from './mockGemini.js'
 
 test('Phase 3 — Document Text Extraction & Editable Review Workflow', async (t) => {
   const app = createApp()
   dataRepository.clearMemory()
+  setMockGeminiClient(createMockGeminiClient())
 
   let sessionCookie = null
   let labDocId = null
@@ -165,7 +168,7 @@ test('Phase 3 — Document Text Extraction & Editable Review Workflow', async (t
     assert.ok(extractRes.body.fieldsCount >= 2)
   })
 
-  await t.test('7. Handle unreadable or corrupted document gracefully', async () => {
+  await t.test('7. Handle unreadable or corrupted document gracefully (422 UNREADABLE_DOCUMENT)', async () => {
     const corruptBuffer = Buffer.from('%PDF-1.4\nMALFORMED_CORRUPTED_DOCUMENT\n%%EOF')
 
     const uploadRes = await request(app)
@@ -179,10 +182,20 @@ test('Phase 3 — Document Text Extraction & Editable Review Workflow', async (t
       .post(`/api/v1/documents/${unreadableDocId}/extract`)
       .set('Cookie', sessionCookie)
 
-    assert.equal(extractRes.status, 200)
-    assert.equal(extractRes.body.status, 'error')
-    assert.equal(extractRes.body.isUnreadable, true)
-    assert.equal(extractRes.body.fieldsCount, 0)
-    assert.ok(extractRes.body.uncertainties.length > 0)
+    assert.equal(extractRes.status, 422)
+    assert.equal(extractRes.body.code, 'UNREADABLE_DOCUMENT')
+    assert.ok(extractRes.body.reason)
+
+    // Check document status is 'rejected'
+    const statusRes = await request(app)
+      .get(`/api/v1/documents/${unreadableDocId}/status`)
+      .set('Cookie', sessionCookie)
+
+    assert.equal(statusRes.status, 200)
+    assert.equal(statusRes.body.status, 'rejected')
+    assert.equal(statusRes.body.rejectionCode, 'UNREADABLE_DOCUMENT')
   })
+
+  resetMockGeminiClient()
 })
+

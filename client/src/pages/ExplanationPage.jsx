@@ -10,10 +10,12 @@ import {
   HelpCircle,
   BookOpen,
   ArrowRight,
+  ArrowLeft,
   Info,
   ShieldCheck,
   AlertTriangle,
   FileText,
+  Loader2,
 } from 'lucide-react'
 import { useLanguage } from '../context/LanguageContext'
 import Button from '../components/ui/Button'
@@ -30,68 +32,110 @@ import SpeechReader from '../components/voice/SpeechReader'
 export default function ExplanationPage() {
   const { t } = useTranslation()
   const { language } = useLanguage()
-  const { documentId = DEMO_DOCUMENT_ID } = useParams()
+  const { documentId } = useParams()
   const navigate = useNavigate()
+
+  const isDemo = !documentId || documentId === DEMO_DOCUMENT_ID
+  const effectiveDocId = isDemo ? DEMO_DOCUMENT_ID : documentId
 
   const [isPlayingAudio, setIsPlayingAudio] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [realAnalysis, setRealAnalysis] = useState(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(!isDemo)
+  const [errorMessage, setErrorMessage] = useState(null)
 
-  // Default demo fallback content
-  const demoContent = language === 'hi' ? DEMO_EXPLANATION_DATA.hi : DEMO_EXPLANATION_DATA.en
+  // Default demo fallback content (strictly for demo document only)
+  const demoContent = isDemo
+    ? (language === 'hi' ? DEMO_EXPLANATION_DATA.hi : DEMO_EXPLANATION_DATA.en)
+    : null
 
   // Load real analysis from backend if real document
   useEffect(() => {
+    let isCancelled = false
+
     async function loadAnalysis() {
-      if (documentId && documentId !== DEMO_DOCUMENT_ID) {
+      if (!isDemo) {
         setIsLoading(true)
+        setErrorMessage(null)
         try {
-          // Attempt explanation generation or retrieval
-          const res = await analysisService.generateExplanation(documentId, language)
+          const res = await analysisService.generateExplanation(effectiveDocId, language)
+          if (isCancelled) return
           if (res) {
             setRealAnalysis(res)
           }
         } catch (err) {
-          console.warn('Backend analysis notice:', err.message)
+          if (isCancelled) return
+          console.error('Explanation generation error:', err)
+
+          const status = err.response?.status || err.status
+          const code = err.response?.data?.code || err.code
+
+          // Route guard: if rejected or not found, redirect to /upload
+          if (status === 422 || status === 404 || code === 'DOCUMENT_REJECTED' || code === 'UNSUPPORTED_DOCUMENT_TYPE') {
+            navigate('/upload', { replace: true })
+            return
+          }
+
           // Try fetching existing summary
           try {
-            const summaryRes = await analysisService.getAnalysisSummary(documentId, language)
-            const termsRes = await analysisService.getAnalysisTerms(documentId, language).catch(() => ({ medicalTerms: [] }))
+            const summaryRes = await analysisService.getAnalysisSummary(effectiveDocId, language)
+            const termsRes = await analysisService.getAnalysisTerms(effectiveDocId, language).catch(() => ({ medicalTerms: [] }))
+            if (isCancelled) return
             setRealAnalysis({
               ...summaryRes,
               medicalTerms: termsRes.medicalTerms || [],
             })
           } catch (fetchErr) {
-            console.warn('Using synthetic demonstration explanation:', fetchErr.message)
+            if (isCancelled) return
+            setErrorMessage(err.response?.data?.error || err.message || 'Unable to generate explanation.')
           }
         } finally {
-          setIsLoading(false)
+          if (!isCancelled) setIsLoading(false)
         }
       }
     }
 
     loadAnalysis()
-  }, [documentId, language])
 
-  // Active content selection
-  const summaryBullets = realAnalysis?.summary || [demoContent.summary]
-  const extractedFacts =
-    realAnalysis?.extractedFacts?.length > 0
-      ? realAnalysis.extractedFacts.map((f) => ({
-          title: f.label,
-          description: `${f.value} ${f.unit || ''}`.trim(),
-          source: f.source,
-        }))
-      : demoContent.keyFacts
+    return () => {
+      isCancelled = true
+    }
+  }, [effectiveDocId, isDemo, language, navigate])
 
-  const medicalTerms =
-    realAnalysis?.medicalTerms?.length > 0
-      ? realAnalysis.medicalTerms.map((m) => ({
-          term: m.term,
-          definition: m.simpleExplanation,
-        }))
-      : demoContent.terms
+  // Active content selection (Demo data strictly behind isDemo check)
+  const summaryBullets = isDemo
+    ? (realAnalysis?.summary || [demoContent.summary])
+    : (realAnalysis?.summary || [])
+
+  const extractedFacts = isDemo
+    ? (realAnalysis?.extractedFacts?.length > 0
+        ? realAnalysis.extractedFacts.map((f) => ({
+            title: f.label,
+            description: `${f.value} ${f.unit || ''}`.trim(),
+            source: f.source,
+          }))
+        : demoContent.keyFacts)
+    : (realAnalysis?.extractedFacts?.length > 0
+        ? realAnalysis.extractedFacts.map((f) => ({
+            title: f.label,
+            description: `${f.value} ${f.unit || ''}`.trim(),
+            source: f.source,
+          }))
+        : [])
+
+  const medicalTerms = isDemo
+    ? (realAnalysis?.medicalTerms?.length > 0
+        ? realAnalysis.medicalTerms.map((m) => ({
+            term: m.term,
+            definition: m.simpleExplanation,
+          }))
+        : demoContent.terms)
+    : (realAnalysis?.medicalTerms?.length > 0
+        ? realAnalysis.medicalTerms.map((m) => ({
+            term: m.term,
+            definition: m.simpleExplanation,
+          }))
+        : [])
 
   const uncertainties = realAnalysis?.uncertainties || []
   const safetyFlags = realAnalysis?.safetyFlags || []
@@ -134,9 +178,53 @@ export default function ExplanationPage() {
     navigate('/upload')
   }
 
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-8">
+        <StepIndicator currentStep={4} language={language} />
+        <Card className="p-12 text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary-600 mx-auto" />
+          <h2 className="text-lg font-bold text-surface-900">{t('explanation.loading')}</h2>
+          <p className="text-xs text-surface-500">Document ID: {effectiveDocId}</p>
+        </Card>
+      </div>
+    )
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-8">
+        <StepIndicator currentStep={4} language={language} />
+        <Card className="p-8 text-center space-y-4 border-danger-200">
+          <AlertTriangle className="h-8 w-8 text-danger-500 mx-auto" />
+          <h2 className="text-lg font-bold text-surface-900">{t('explanation.error_title')}</h2>
+          <p className="text-sm text-surface-600 max-w-md mx-auto">{errorMessage}</p>
+          <div className="pt-2">
+            <Link to="/upload">
+              <Button variant="primary" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-1.5" />
+                <span>{t('processing.btn_upload_diff')}</span>
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <StepIndicator currentStep={4} language={language} />
+
+      {/* Demo Notice Banner - strictly in demo mode */}
+      {isDemo && (
+        <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-teal-50 border border-teal-200/60 text-teal-900 text-xs leading-relaxed">
+          <FileText className="h-4 w-4 shrink-0 mt-0.5 text-teal-600" />
+          <span>
+            <strong>Demo Sample Explanation:</strong> {t('explanation.demo_notice')}
+          </span>
+        </div>
+      )}
 
       {/* Header and Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -145,14 +233,16 @@ export default function ExplanationPage() {
             {t('explanation.title')}
           </h1>
           <p className="text-xs text-surface-500 mt-1">
-            Document ID: <code className="bg-surface-100 px-1 py-0.5 rounded">{documentId}</code> ·{' '}
+            Document ID: <code className="bg-surface-100 px-1 py-0.5 rounded">{effectiveDocId}</code> ·{' '}
             {language === 'hi' ? 'हिन्दी में सरल व्याख्या' : 'Plain-Language Medical Explanation'}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {/* TTS Listen Button */}
-          <SpeechReader text={summaryBullets.join('. ')} variant="teal" />
+          {summaryBullets.length > 0 && (
+            <SpeechReader text={summaryBullets.join('. ')} variant="teal" />
+          )}
 
           {/* Delete Document Button */}
           <Button
