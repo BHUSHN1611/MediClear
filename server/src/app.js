@@ -41,6 +41,7 @@ export function createApp() {
         ...staticOrigins,
         'http://localhost:5173',
         'http://localhost:5174',
+        "https://medi-clear-d5w19r8uo-bhushn-team.vercel.app/"
       ])
     )
 
